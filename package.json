@@ -1,0 +1,29 @@
+{
+  "name": "confusefulliest",
+  "version": "1.0.0",
+  "description": "一个代码结构解析与可视化工具，专注于帮助开发者理解复杂代码逻辑。",
+  "main": "sample.js",
+  "directories": {
+    "doc": "doc"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cinast/confusefulliest.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/cinast/confusefulliest/issues"
+  },
+  "homepage": "https://github.com/cinast/confusefulliest#readme",
+  "devDependencies": {
+    "@types/node": "^24.0.13",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  }
+}

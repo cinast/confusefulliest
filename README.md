@@ -77,6 +77,14 @@ And there comes such a project
     你别想了，  
      我只会 js、ts、py
 
+## 参考手册
+
+-   [doc://现状&工程细节介绍](doc\现状.md)
+-   [doc://样例 drawio](doc\example.drawio)
+-   [彩蛋 0](undefined)
+-   [彩蛋 1](about:blank)
+-   [彩蛋 2](https://www.bilibili.com/video/av546403908/)
+
 啊然后是什么..稿子...来自
 我#￥ G ￥（@#FG（%）
 56w<QjoZ%fnG~),n!2P@{e$i"$Zv`NRH|)ros?DsGE$hk,u3qE)#7zVy(qJ|>6&;B*6JirI*&%&

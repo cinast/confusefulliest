@@ -1,51 +1,47 @@
 import argparse
-import json
-import subprocess
-import sys
+import logging
 from pathlib import Path
+from visual.drawio_generator import DrawIOGenerator
+from core.parser import CodeParser
 
-def run_ts_parser(file_path: str) -> dict:
-    """调用TS解析器并返回结果"""
-    ts_script = str(Path(__file__).parent / 'ts-parser' / 'index.ts')
-    # Windows系统使用npx.cmd
-    npx_path = str(Path(__file__).parent / 'node_modules' / '.bin' / 'npx.cmd')
-    if not Path(npx_path).exists():
-        npx_path = 'npx.cmd'  # 如果本地没有，尝试全局安装的npx
-        
-    cmd = [npx_path, 'ts-node', ts_script, file_path]
-    
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        return json.loads(result.stdout)
-    except subprocess.CalledProcessError as e:
-        print(f"TS解析器错误: {e.stderr}", file=sys.stderr)
-        sys.exit(1)
-    except json.JSONDecodeError:
-        print("无法解析TS解析器输出", file=sys.stderr)
-        sys.exit(1)
+def setup_logging():
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
 
 def main():
-    parser = argparse.ArgumentParser(description='TS/JS代码大纲解析工具')
-    parser.add_argument('input', help='输入的TS/JS文件路径')
-    parser.add_argument('-o', '--output', help='输出文件路径(JSON格式)')
+    setup_logging()
+    logger = logging.getLogger(__name__)
+    parser = argparse.ArgumentParser(
+        description="Generate architecture diagrams from TS/JS code"
+    )
+    parser.add_argument("input", help="Input TypeScript/JavaScript file")
+    parser.add_argument("-o", "--output", 
+                      default="output.drawio",
+                      help="Output drawio file path")
     
     args = parser.parse_args()
     
-    # 调用TS解析器
-    result = run_ts_parser(args.input)
+    # Check input file exists
+    if not Path(args.input).exists():
+        logger.error(f"Input file {args.input} not found")
+        return
     
-    # 输出结果
-    if args.output:
-        with open(args.output, 'w', encoding='utf-8') as f:
-            json.dump(result, f, indent=2, ensure_ascii=False)
-        print(f"结果已保存到 {args.output}")
-    else:
-        print(json.dumps(result, indent=2, ensure_ascii=False))
+    # Parse the input file
+    logger.info(f"Parsing {args.input}...")
+    parser = CodeParser()
+    ast_data = parser.parse_file(args.input)
+    
+    if not ast_data:
+        logger.error("Failed to parse input file")
+        return
+    
+    # Generate visualization
+    logger.info(f"Generating {args.output}...")
+    generator = DrawIOGenerator()
+    generator.generate_drawio(ast_data, args.output)
+    logger.info("Done!")
 
 if __name__ == "__main__":
     main()

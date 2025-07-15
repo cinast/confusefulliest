@@ -1,100 +1,132 @@
-import re
-from typing import List, Dict
+import json
+import subprocess
 from pathlib import Path
+from typing import Dict, Optional
+import logging
 
-class JSParser:
-    """解析JavaScript/TypeScript代码并提取大纲结构"""
-    
+class CodeParser:
     def __init__(self):
-        self.patterns = {
-            'import': re.compile(r'^import\s+(?:.*?\s+from\s+)?[\'"](.+?)[\'"]'),
-            'class': re.compile(r'^(export\s+)?(?:abstract\s+)?class\s+(\w+)'),
-            'interface': re.compile(r'^(export\s+)?interface\s+(\w+)'),
-            'type': re.compile(r'^(export\s+)?type\s+(\w+)'),
-            'enum': re.compile(r'^(export\s+)?enum\s+(\w+)'),
-            'namespace': re.compile(r'^(export\s+)?namespace\s+(\w+)'),
-            'module': re.compile(r'^declare\s+module\s+[\'"](.+?)[\'"]'),
-            'function': re.compile(r'^(export\s+)?(?:async\s+)?function\s+(\w+)'),
-            'arrow_function': re.compile(r'^(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*\(.*\)\s*=>'),
-            'method': re.compile(r'^(?:\w+\s+)?(\w+)\s*\(.*\)\s*(?::\s*\w+)?\s*[\{=]'),
-            'variable': re.compile(r'^(export\s+)?(const|let|var)\s+(\w+)'),
-            'decorator': re.compile(r'^@(\w+)')
-        }
-    
-    def parse_file(self, file_path: str) -> Dict[str, List]:
-        """解析单个文件并返回大纲结构"""
+        self.logger = logging.getLogger(__name__)
+        
+    def parse_file(self, file_path: str) -> Optional[Dict]:
+        """Parse a code file and return standardized AST data"""
         path = Path(file_path)
         if not path.exists():
-            raise FileNotFoundError(f"文件不存在: {file_path}")
+            self.logger.error(f"File not found: {file_path}")
+            return None
             
-        result = {
-            'imports': [],
-            'classes': [],
-            'interfaces': [],
-            'types': [],
-            'enums': [],
-            'namespaces': [],
-            'modules': [],
-            'functions': [],
-            'arrow_functions': [],
-            'variables': [],
-            'decorators': []
+        if path.suffix.lower() in ('.ts', '.js'):
+            return self._parse_with_ts_parser(file_path)
+        else:
+            self.logger.error(f"Unsupported file type: {path.suffix}")
+            return None
+            
+    def _parse_with_ts_parser(self, file_path: str) -> Optional[Dict]:
+        """Call the TypeScript parser and process results"""
+        try:
+            # 使用绝对路径确保能找到文件
+            base_dir = Path(__file__).parent.parent
+            ts_parser_path = base_dir / "ts-parser" / "index.ts"
+            self.logger.info(f"Trying to parse with: {ts_parser_path}")
+            
+            if not ts_parser_path.exists():
+                self.logger.error(f"TS parser not found at: {ts_parser_path}")
+                return None
+                
+            # 获取Node.js安装路径
+            node_path = subprocess.run(
+                ["where", "node"],
+                capture_output=True,
+                text=True
+            ).stdout.splitlines()[0].strip()
+            npm_path = str(Path(node_path).parent / "npx.cmd")
+            
+            result = subprocess.run(
+                [npm_path, "ts-node", str(ts_parser_path), file_path],
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                cwd=str(base_dir)
+            )
+            
+            if result.returncode != 0:
+                self.logger.error(f"Parser error: {result.stderr}")
+                return None
+                
+            try:
+                ast_data = json.loads(result.stdout) if result.stdout else {}
+            except json.JSONDecodeError:
+                self.logger.error(f"Invalid JSON output: {result.stdout}")
+                return None
+            return self._standardize_ast(ast_data)
+            
+        except Exception as e:
+            self.logger.error(f"Parsing failed: {str(e)}")
+            return None
+            
+    def _standardize_ast(self, ast_data: Dict) -> Dict:
+        """Convert parser-specific AST to standard format with full details"""
+        standardized = {
+            "filename": ast_data.get("filename", ""),
+            "language": ast_data.get("language", "unknown"),
+            "nodes": []
         }
         
-        with open(file_path, 'r', encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                self._parse_line(line, result)
+        # Process classes, interfaces, functions etc.
+        for category in ["classes", "interfaces", "functions", "variables", "types", "enums"]:
+            for node in ast_data.get(category, []):
+                std_node = {
+                    "type": category[:-1],  # Remove 's' (class, interface etc)
+                    "name": node.get("name", ""),
+                    "kind": node.get("kind", ""),
+                    "value": node.get("value", ""),
+                    "children": []
+                }
                 
-        return result
-    
-    def _parse_line(self, line: str, result: Dict):
-        """解析单行代码并更新结果"""
-        # 检查导入语句
-        if match := self.patterns['import'].match(line):
-            result['imports'].append(match.group(1))
-            
-        # 检查类定义
-        elif match := self.patterns['class'].match(line):
-            result['classes'].append(match.group(2))
-            
-        # 检查函数定义
-        elif match := self.patterns['function'].match(line):
-            result['functions'].append(match.group(2))
-            
-        # 检查接口定义
-        elif match := self.patterns['interface'].match(line):
-            result['interfaces'].append(match.group(2))
-        # 检查类型别名
-        elif match := self.patterns['type'].match(line):
-            result['types'].append(match.group(2))
-        # 检查枚举
-        elif match := self.patterns['enum'].match(line):
-            result['enums'].append(match.group(2))
-        # 检查命名空间
-        elif match := self.patterns['namespace'].match(line):
-            result['namespaces'].append(match.group(2))
-        # 检查模块声明
-        elif match := self.patterns['module'].match(line):
-            result['modules'].append(match.group(1))
-        # 检查箭头函数
-        elif match := self.patterns['arrow_function'].match(line):
-            result['arrow_functions'].append(match.group(1))
-        # 检查变量声明
-        elif match := self.patterns['variable'].match(line):
-            result['variables'].append(match.group(3))
-        # 检查装饰器
-        elif match := self.patterns['decorator'].match(line):
-            result['decorators'].append(match.group(1))
+                # Process class members
+                if category == "classes":
+                    for prop in node.get("properties", []):
+                        std_node["children"].append({
+                            "type": "property",
+                            "name": prop.get("name", ""),
+                            "kind": prop.get("type", ""),
+                            "relationship": "has"
+                        })
+                    
+                    for method in node.get("methods", []):
+                        std_node["children"].append({
+                            "type": "method", 
+                            "name": method.get("name", ""),
+                            "kind": method.get("returnType", ""),
+                            "relationship": "has"
+                        })
+                
+                # Process interface members
+                elif category == "interfaces":
+                    for prop in node.get("properties", []):
+                        std_node["children"].append({
+                            "type": "property",
+                            "name": prop.get("name", ""),
+                            "kind": prop.get("type", ""),
+                            "relationship": "requires"
+                        })
+                
+                standardized["nodes"].append(std_node)
+        
+        return standardized
 
 if __name__ == "__main__":
-    parser = JSParser()
-    sample_code = """
-    import React from 'react';
-    const name = 'Test';
-    class MyComponent {}
-    function myFunc() {}
-    """
+    # Test the parser
+    import logging
+    logging.basicConfig(level=logging.INFO)
     
-    # 测试解析器
-    print(parser.parse_file("sample.js"))
+    parser = CodeParser()
+    test_file = "ts-parser/test/sample.ts"
+    result = parser.parse_file(test_file)
+    
+    if result:
+        print("Parsing successful!")
+        print(json.dumps(result, indent=2))
+    else:
+        print("Parsing failed")

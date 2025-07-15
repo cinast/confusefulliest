@@ -18,7 +18,7 @@ class Account {
     @propRules.onlyWhen(function (this: Account) {
         return this._admin;
     })
-    sensitiveData: string = "";
+    sensitiveData: string = "" + "3";
 
     @propRules.onlyTheClassAndSubCanWrite(class Temp {})
     protected _secret: string = "confidential";
@@ -60,3 +60,7 @@ console.log(acc.sensitiveData); // 'data'
 // 测试onlyTheClassAndSubCanWrite
 console.log("原始_secret:", subAcc.updateSecret("initial secret")); // 通过方法访问
 console.log("新_secret:", subAcc.updateSecret("updated secret"));
+
+function blo(input: number) {
+    return input * input;
+}

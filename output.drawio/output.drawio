@@ -1,0 +1,67 @@
+<mxfile host="Drawpyo" modified="2025-07-15T16:55:12" agent="Python 3.13, Drawpyo 0.01" version="21.6.5" type="device">
+  <diagram name="Page-1" id="2454685821184">
+    <mxGraphModel dx="2037" dy="830" grid="1" gridSize="10" guides="1" toolTips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="2454685822192" value="" style="swimlane;whiteSpace=wrap;rounded=0;fillColor=none;dashed=0;html=1;movable=1;resizable=1;swimlaneFillColor=none;" vertex="1" parent="1">
+  <mxGeometry x="30" y="75" width="1580" height="1075" as="geometry" />
+</mxCell>
+        <mxCell id="2454685169168" value="" style="whiteSpace=wrap;rounded=1;fillColor=#292D3E;strokeColor=none;dashed=0;html=1;strokeWidth=3;" vertex="1" parent="2454685822192">
+  <mxGeometry x="50" y="100" width="1440" height="430" as="geometry" />
+</mxCell>
+        <mxCell id="2454685168848" value="&lt;b&gt;Account&lt;/b&gt;" style="whiteSpace=wrap;rounded=0;fillColor=none;dashed=0;fontFamily=Verdana;fontSize=14;fontColor=#FFCB6B;html=1;" vertex="1" parent="2454685169168">
+  <mxGeometry x="55" y="105" width="1430" height="30" as="geometry" />
+</mxCell>
+        <mxCell id="2454685170768" value="&lt;div style=&quot;font-family:Consolas;font-size:12px&quot;&gt;&lt;span style=&quot;color:#C792EA&quot;&gt;property&lt;/span&gt; &lt;span style=&quot;color:#EEFFFF&quot;&gt;username&lt;/span&gt; &lt;span style=&quot;color:#89DDFF&quot;&gt;:&lt;/span&gt; &lt;span style=&quot;color:#FFCB6B&quot;&gt;string&lt;/span&gt;&lt;/div&gt;" style="whiteSpace=wrap;rounded=0;fillColor=#292D3E;dashed=0;fontColor=#EEFFFF;fontFamily=Consolas;fontSize=12;html=1;" vertex="1" parent="2454685169168">
+  <mxGeometry x="60" y="160" width="1420" height="40" as="geometry" />
+</mxCell>
+        <mxCell id="2454685171088" value="&lt;div style=&quot;font-family:Consolas;font-size:12px&quot;&gt;&lt;span style=&quot;color:#C792EA&quot;&gt;property&lt;/span&gt; &lt;span style=&quot;color:#EEFFFF&quot;&gt;sensitiveData&lt;/span&gt; &lt;span style=&quot;color:#89DDFF&quot;&gt;:&lt;/span&gt; &lt;span style=&quot;color:#FFCB6B&quot;&gt;string&lt;/span&gt;&lt;/div&gt;" style="whiteSpace=wrap;rounded=0;fillColor=#292D3E;dashed=0;fontColor=#EEFFFF;fontFamily=Consolas;fontSize=12;html=1;" vertex="1" parent="2454685169168">
+  <mxGeometry x="60" y="210" width="1420" height="40" as="geometry" />
+</mxCell>
+        <mxCell id="2454685171408" value="&lt;div style=&quot;font-family:Consolas;font-size:12px&quot;&gt;&lt;span style=&quot;color:#C792EA&quot;&gt;property&lt;/span&gt; &lt;span style=&quot;color:#EEFFFF&quot;&gt;minBalance&lt;/span&gt; &lt;span style=&quot;color:#89DDFF&quot;&gt;:&lt;/span&gt; &lt;span style=&quot;color:#FFCB6B&quot;&gt;number&lt;/span&gt;&lt;/div&gt;" style="whiteSpace=wrap;rounded=0;fillColor=#292D3E;dashed=0;fontColor=#EEFFFF;fontFamily=Consolas;fontSize=12;html=1;" vertex="1" parent="2454685169168">
+  <mxGeometry x="60" y="260" width="1420" height="40" as="geometry" />
+</mxCell>
+        <mxCell id="2454686220368" value="&lt;div style=&quot;font-family:Consolas;font-size:12px&quot;&gt;&lt;span style=&quot;color:#C792EA&quot;&gt;property&lt;/span&gt; &lt;span style=&quot;color:#EEFFFF&quot;&gt;maxTransfer&lt;/span&gt; &lt;span style=&quot;color:#89DDFF&quot;&gt;:&lt;/span&gt; &lt;span style=&quot;color:#FFCB6B&quot;&gt;number&lt;/span&gt;&lt;/div&gt;" style="whiteSpace=wrap;rounded=0;fillColor=#292D3E;dashed=0;fontColor=#EEFFFF;fontFamily=Consolas;fontSize=12;html=1;" vertex="1" parent="2454685169168">
+  <mxGeometry x="60" y="310" width="1420" height="40" as="geometry" />
+</mxCell>
+        <mxCell id="2454686220688" value="&lt;div style=&quot;font-family:Consolas;font-size:12px&quot;&gt;&lt;span style=&quot;color:#C792EA&quot;&gt;property&lt;/span&gt; &lt;span style=&quot;color:#EEFFFF&quot;&gt;balance&lt;/span&gt; &lt;span style=&quot;color:#89DDFF&quot;&gt;:&lt;/span&gt; &lt;span style=&quot;color:#FFCB6B&quot;&gt;number&lt;/span&gt;&lt;/div&gt;" style="whiteSpace=wrap;rounded=0;fillColor=#292D3E;dashed=0;fontColor=#EEFFFF;fontFamily=Consolas;fontSize=12;html=1;" vertex="1" parent="2454685169168">
+  <mxGeometry x="60" y="360" width="1420" height="40" as="geometry" />
+</mxCell>
+        <mxCell id="2454686221008" value="&lt;div style=&quot;font-family:Consolas;font-size:12px&quot;&gt;&lt;span style=&quot;color:#C792EA&quot;&gt;property&lt;/span&gt; &lt;span style=&quot;color:#EEFFFF&quot;&gt;_secret&lt;/span&gt; &lt;span style=&quot;color:#89DDFF&quot;&gt;:&lt;/span&gt; &lt;span style=&quot;color:#FFCB6B&quot;&gt;string&lt;/span&gt;&lt;/div&gt;" style="whiteSpace=wrap;rounded=0;fillColor=#292D3E;dashed=0;fontColor=#EEFFFF;fontFamily=Consolas;fontSize=12;html=1;" vertex="1" parent="2454685169168">
+  <mxGeometry x="60" y="410" width="1420" height="40" as="geometry" />
+</mxCell>
+        <mxCell id="2454686221328" value="&lt;div style=&quot;font-family:Consolas;font-size:12px&quot;&gt;&lt;span style=&quot;color:#C792EA&quot;&gt;property&lt;/span&gt; &lt;span style=&quot;color:#EEFFFF&quot;&gt;_admin&lt;/span&gt; &lt;span style=&quot;color:#89DDFF&quot;&gt;:&lt;/span&gt; &lt;span style=&quot;color:#FFCB6B&quot;&gt;boolean&lt;/span&gt;&lt;/div&gt;" style="whiteSpace=wrap;rounded=0;fillColor=#292D3E;dashed=0;fontColor=#EEFFFF;fontFamily=Consolas;fontSize=12;html=1;" vertex="1" parent="2454685169168">
+  <mxGeometry x="60" y="460" width="1420" height="40" as="geometry" />
+</mxCell>
+        <mxCell id="2454686221648" value="" style="whiteSpace=wrap;rounded=1;fillColor=#292D3E;strokeColor=none;dashed=0;html=1;strokeWidth=3;" vertex="1" parent="2454685822192">
+  <mxGeometry x="50" y="580" width="240" height="130" as="geometry" />
+</mxCell>
+        <mxCell id="2454686221968" value="&lt;b&gt;SubAccount&lt;/b&gt;" style="whiteSpace=wrap;rounded=0;fillColor=none;dashed=0;fontFamily=Verdana;fontSize=14;fontColor=#FFCB6B;html=1;" vertex="1" parent="2454686221648">
+  <mxGeometry x="55" y="585" width="230" height="30" as="geometry" />
+</mxCell>
+        <mxCell id="2454686222288" value="&lt;div style=&quot;font-family:Consolas;font-size:12px&quot;&gt;&lt;span style=&quot;color:#C792EA&quot;&gt;method&lt;/span&gt; &lt;span style=&quot;color:#EEFFFF&quot;&gt;updateSecret&lt;/span&gt; &lt;span style=&quot;color:#89DDFF&quot;&gt;:&lt;/span&gt; &lt;span style=&quot;color:#FFCB6B&quot;&gt;void&lt;/span&gt;&lt;/div&gt;" style="whiteSpace=wrap;rounded=0;fillColor=#292D3E;dashed=0;fontColor=#EEFFFF;fontFamily=Consolas;fontSize=12;html=1;" vertex="1" parent="2454686221648">
+  <mxGeometry x="60" y="640" width="220" height="40" as="geometry" />
+</mxCell>
+        <mxCell id="2454686222608" value="" style="whiteSpace=wrap;rounded=1;fillColor=#292D3E;strokeColor=none;dashed=0;html=1;strokeWidth=3;" vertex="1" parent="2454685822192">
+  <mxGeometry x="340" y="580" width="180" height="80" as="geometry" />
+</mxCell>
+        <mxCell id="2454686222928" value="&lt;b&gt;blo&lt;/b&gt;" style="whiteSpace=wrap;rounded=0;fillColor=none;dashed=0;fontFamily=Verdana;fontSize=14;fontColor=#FFCB6B;html=1;" vertex="1" parent="2454686222608">
+  <mxGeometry x="345" y="585" width="170" height="30" as="geometry" />
+</mxCell>
+        <mxCell id="2454686223248" value="" style="whiteSpace=wrap;rounded=1;fillColor=#292D3E;strokeColor=none;dashed=0;html=1;strokeWidth=3;" vertex="1" parent="2454685822192">
+  <mxGeometry x="570" y="580" width="180" height="80" as="geometry" />
+</mxCell>
+        <mxCell id="2454686223568" value="&lt;b&gt;acc&lt;/b&gt;" style="whiteSpace=wrap;rounded=0;fillColor=none;dashed=0;fontFamily=Verdana;fontSize=14;fontColor=#FFCB6B;html=1;" vertex="1" parent="2454686223248">
+  <mxGeometry x="575" y="585" width="170" height="30" as="geometry" />
+</mxCell>
+        <mxCell id="2454686223888" value="" style="whiteSpace=wrap;rounded=1;fillColor=#292D3E;strokeColor=none;dashed=0;html=1;strokeWidth=3;" vertex="1" parent="2454685822192">
+  <mxGeometry x="800" y="580" width="180" height="80" as="geometry" />
+</mxCell>
+        <mxCell id="2454686224208" value="&lt;b&gt;subAcc&lt;/b&gt;" style="whiteSpace=wrap;rounded=0;fillColor=none;dashed=0;fontFamily=Verdana;fontSize=14;fontColor=#FFCB6B;html=1;" vertex="1" parent="2454686223888">
+  <mxGeometry x="805" y="585" width="170" height="30" as="geometry" />
+</mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

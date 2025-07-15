@@ -1,29 +1,26 @@
 import { propRules } from "./propRules";
 
-// 启用实验性装饰器
-declare const decorators: any;
-
 class Account {
-    @(propRules.noZero as any)
+    @propRules.noZero
     balance: number = 100;
 
-    @(propRules.noOver(1000) as any)
+    @propRules.noOver(1000)
     maxTransfer: number = 500;
 
-    @(propRules.noLower(100) as any)
+    @propRules.noLower(100)
     minBalance: number = 100;
 
-    @(propRules.watchSet<string>((_, __, val) => val.toUpperCase()) as any)
+    @propRules.watchSet<string>((_, __, val) => val.toUpperCase())
     username: string = "";
 
     _admin: boolean = false;
 
-    @(propRules.onlyWhen(function (this: Account) {
+    @propRules.onlyWhen(function (this: Account) {
         return this._admin;
-    }) as any)
+    })
     sensitiveData: string = "";
 
-    @(propRules.onlyTheClassAndSubCanWrite(class Temp {}) as any)
+    @propRules.onlyTheClassAndSubCanWrite(class Temp {})
     protected _secret: string = "confidential";
 }
 

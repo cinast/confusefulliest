@@ -84,5 +84,5 @@ And there comes such a project
 > `drawpyo-0.2.2` ——`py-drawio`项目的好东西  
 > `Palenight Theme` — 一个 颜色主题插件 但我只用了他颜色
 
-\*项目混乱，有待整理...\*
+\*项目混乱，有待整理...\*  
 _ds 有点难掌控..._

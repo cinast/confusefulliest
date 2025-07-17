@@ -1,5 +1,5 @@
 import drawpyo
-from typing import Dict, List
+from typing import Dict
 
 class DrawIOGenerator:
     def __init__(self):

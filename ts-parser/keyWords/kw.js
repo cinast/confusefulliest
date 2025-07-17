@@ -42,4 +42,4 @@ const keywordKinds = Object.keys(ts.SyntaxKind)
     .filter((kind) => kind.endsWith("Keyword") && !EXCLUDED_KEYWORDS.includes(kind))
     .map((kind) => kind.replace(/Keyword$/, "").toLowerCase());
 
-console.log(keywordKinds);
+console.log(JSON.stringify(keywordKinds, null, 2));

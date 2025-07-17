@@ -1,1 +1,1 @@
-node c:\Users\aaeow\Desktop\code\store\python\confusefulliest\ts-parser\keyWords\wk.js > ./keyWords.json
+node c:\Users\aaeow\Desktop\code\store\python\confusefulliest\ts-parser\keyWords\kw.js > ts-parser/keyWords/keyWords.json

@@ -1,5 +1,20 @@
 import * as ts from "typescript";
 
+/**
+ * 目前打算支持的
+ */
+const JSFileType = ["js"];
+
+/**
+ * 目前打算支持的
+ */
+const TSFileType = ["ts"];
+
+/**
+ * 这是代码文件的最高大纲，也是整个文件的解析对象 \
+ * 首先功能是列出所有定义在全局的东西 \
+ * 第二功能是列出里面包含的逻辑树（含逻辑流、函数调用、实值或者类型的运算操作）
+ */
 export interface CodeStructure {
     imports: string[];
     classes: ClassInfo[];
@@ -37,6 +52,8 @@ interface BaseInfo {
         trailing?: string[];
     };
 }
+
+// 以下是所有**定义**作用的关键字的解析模版对象
 
 interface ClassInfo extends BaseInfo {
     methods: MethodInfo[];
@@ -167,14 +184,33 @@ interface ParameterInfo {
     type: string;
 }
 
-function parseFile(filePath: string): CodeStructure {
-    const isTypeScript = filePath.endsWith(".ts") || filePath.endsWith(".tsx");
-    const compilerOptions = {
-        allowJs: true,
-        checkJs: false,
-        target: ts.ScriptTarget.ESNext,
-        module: ts.ModuleKind.CommonJS,
-    };
+function fileNameTail(filePath: string) {
+    return filePath.substring(filePath.lastIndexOf(".") + 1);
+}
+
+/**
+ * **在命令行调用它**
+ * ts/ ~~js~~ 的解析器（js还没有准备好）
+ * @param filePath 命令行给的参数,文件实际位置
+ * @returns 文件的解析结果
+ */
+function parseFile(filePath: string, tsconfg?: string): CodeStructure {
+    const isTypeScript = TSFileType.includes(fileNameTail(filePath));
+
+    /**
+     *
+     */
+    const compilerOptions =
+        JSON.parse(
+            require(tsconfg && fileNameTail(tsconfg).toLowerCase() == "json" ? tsconfg : "") ||
+                require("/ts-parser/parser-default-tsconfig.json")
+        ) ||
+        ({
+            allowJs: true,
+            checkJs: false,
+            target: ts.ScriptTarget.ESNext,
+            module: ts.ModuleKind.CommonJS,
+        } as const);
 
     // 获取注释帮助函数
     const getComments = (node: ts.Node) => {
@@ -682,8 +718,11 @@ function parseFile(filePath: string): CodeStructure {
     return result;
 }
 
-// 命令行接口
-if (require.main === module) {
+/**
+ * 命令行接口 \
+ * 如果你直接调用这个文件
+ */
+function cli() {
     const filePath = process.argv[2];
     if (!filePath) {
         console.error("请提供要解析的文件路径");
@@ -693,3 +732,5 @@ if (require.main === module) {
     const result = parseFile(filePath);
     console.log(JSON.stringify(result, null, 2));
 }
+
+if (require.main === module) cli();

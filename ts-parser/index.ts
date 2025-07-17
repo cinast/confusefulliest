@@ -1,23 +1,10 @@
 import * as ts from "typescript";
 import * as fs from "fs";
 
-/**
- * 目前打算支持的
- */
+// 支持的扩展名类型
 const JSFileType = ["js"];
-
-/**
- * 目前打算支持的
- */
 const TSFileType = ["ts"];
 
-/**
- * 这是代码文件的最高大纲 \
- * 首先功能是列出所有全部定义了的东西（包含局域的） \
- * 第二功能是列出里面包含的逻辑树（含逻辑流、函数调用、实值或者类型的运算操作） \
- * 其内所有包含内容的属性全部都是平面结构 \
- *
- */
 export interface CodeStructure {
     imports: string[];
     classes: ClassInfo[];
@@ -31,30 +18,19 @@ export interface CodeStructure {
 
 interface BaseInfo {
     name: string;
-    parent?: string; // 父级元素名称
-    path: string[]; // 完整访问路径
-    location?: {
-        start: number;
-        end?: number;
-    };
-    comments?: {
-        leading?: string[];
-        trailing?: string[];
-    };
+    parent?: string;
+    path: string[];
+    location?: { start: number; end?: number };
+    comments?: { leading?: string[]; trailing?: string[]; jsdoc?: string };
 }
-
-// 以下是所有**定义**作用的关键字的解析模版对象
 
 interface ClassInfo extends BaseInfo {
     methods: MethodInfo[];
     properties: PropertyInfo[];
     children: Array<ClassInfo | InterfaceInfo | TypeAliasInfo | EnumInfo | FunctionInfo | VariableInfo>;
-    extends?: string; // 继承的父类
-    implements: string[]; // 实现的接口
-    prototype: {
-        constructor: string;
-        __proto__?: string;
-    };
+    extends?: string;
+    implements: string[];
+    prototype: { constructor: string; __proto__?: string };
 }
 
 interface InterfaceInfo extends BaseInfo {
@@ -63,11 +39,7 @@ interface InterfaceInfo extends BaseInfo {
 
 interface TypeAliasInfo extends BaseInfo {
     type: string;
-    typeParameters?: string[]; // 泛型参数
-    complexType?: {
-        kind: "union" | "intersection" | "constructor" | "conditional";
-        types: string[];
-    };
+    typeParameters?: string[];
 }
 
 interface EnumInfo extends BaseInfo {
@@ -81,8 +53,8 @@ interface NamespaceInfo extends BaseInfo {
 interface FunctionInfo extends BaseInfo {
     parameters: ParameterInfo[];
     returnType: string;
-    typeParameters?: string[]; // 泛型参数
-    decorators?: string[]; // 装饰器
+    typeParameters?: string[];
+    decorators?: string[];
     isGeneric?: boolean;
 }
 
@@ -105,72 +77,28 @@ interface ParameterInfo {
     type: string;
 }
 
-function fileNameTail(filePath: string) {
-    return filePath.substring(filePath.lastIndexOf(".") + 1);
+function getComments(node: ts.Node) {
+    const sourceText = node.getSourceFile().getFullText();
+    const leadingRanges = ts.getLeadingCommentRanges(sourceText, node.getFullStart()) || [];
+    const trailingRanges = ts.getTrailingCommentRanges(sourceText, node.getEnd()) || [];
+    const jsDoc = ts.getJSDocCommentsAndTags(node);
+
+    return {
+        leading: leadingRanges.map((r) => sourceText.substring(r.pos, r.end).trim()),
+        trailing: trailingRanges.map((r) => sourceText.substring(r.pos, r.end).trim()),
+        jsdoc: jsDoc.length ? jsDoc[0].getFullText().trim() : undefined,
+    };
 }
 
-/**
- * **在命令行调用它**
- * ts/ ~~js~~ 的解析器（js还没有准备好）
- * @param filePath 命令行给的参数,文件实际位置
- * @returns 文件的解析结果
- */
-function parseFile(filePath: string, tsconfg?: string): CodeStructure {
-    const isTypeScript = TSFileType.includes(fileNameTail(filePath));
-    // 选择一个配置
-    let compilerOptions;
-    try {
-        console.log(
-            `using ${
-                tsconfg && fileNameTail(tsconfg).toLowerCase() == "json" ? tsconfg : "/ts-parser/parser-default-tsconfig.json"
-            } as tsconfg`
-        );
-        /*
-         *  指定的配置有没有还是说不符合规定
-         *  既然没用那就换默认
-         *  至于内容合不合规范，你问报不报错
-         */
-        compilerOptions = JSON.parse(
-            require(tsconfg && fileNameTail(tsconfg).toLowerCase() == "json" ? tsconfg : "") ||
-                require("/ts-parser/parser-default-tsconfig.json")
-        );
-    } catch (error) {
-        // 哪个天才把这个默认文件给删了
-        console.warn(error);
-        console.warn("parser-default-tsconfig.json NOT FUND");
-        console.warn("now using built-in tsconfg in ts-parser/index.ts");
-        compilerOptions = {
-            allowJs: true,
-            checkJs: false,
-            target: ts.ScriptTarget.ESNext,
-            module: ts.ModuleKind.CommonJS,
-        };
-    }
-
-    Object.freeze(compilerOptions);
-
-    // 获取注释帮助函数
-    const getComments = (node: ts.Node) => {
-        const comments: string[] = [];
-        const commentRanges = ts.getLeadingCommentRanges(node.getSourceFile().getFullText(), node.getFullStart()) || [];
-
-        for (const range of commentRanges) {
-            comments.push(node.getSourceFile().getFullText().substring(range.pos, range.end).trim());
-        }
-        return comments.length ? comments : undefined;
+function parseFile(filePath: string): CodeStructure {
+    const compilerOptions: ts.CompilerOptions = {
+        target: ts.ScriptTarget.Latest,
+        module: ts.ModuleKind.ESNext,
+        allowJs: true,
     };
 
     const program = ts.createProgram([filePath], compilerOptions);
     const sourceFile = program.getSourceFile(filePath);
-    const checker = program.getTypeChecker();
-
-    // TS特有解析结果
-    const tsSpecific = {
-        interfaces: [] as InterfaceInfo[],
-        types: [] as TypeAliasInfo[],
-        enums: [] as EnumInfo[],
-    };
-
     const result: CodeStructure = {
         imports: [],
         classes: [],
@@ -182,199 +110,163 @@ function parseFile(filePath: string, tsconfg?: string): CodeStructure {
         namespaces: [],
     };
 
-    let currentParent: string | null = null;
-    let currentPath: string[] = [];
+    if (!sourceFile) return result;
 
-    if (!sourceFile) {
-        return result;
+    // 定义上下文类型
+    interface Context {
+        parent?: string;
+        path: string[];
     }
 
-    ts.forEachChild(sourceFile, (node) => {
-        // 解析导入语句
+    const contextStack: Context[] = [];
+    let currentContext: Context = { parent: undefined, path: [] };
+
+    const visitNode = (node: ts.Node) => {
+        const comments = getComments(node);
+        const commentData = {
+            leading: comments.leading.length ? comments.leading : undefined,
+            trailing: comments.trailing.length ? comments.trailing : undefined,
+            jsdoc: comments.jsdoc,
+        };
+
+        // 处理导入语句
         if (ts.isImportDeclaration(node)) {
             const moduleSpecifier = node.moduleSpecifier.getText();
             result.imports.push(moduleSpecifier.replace(/['"]/g, ""));
         }
 
-        // TS特有语法解析
-        if (isTypeScript) {
-            if (ts.isInterfaceDeclaration(node)) {
-                const comments = getComments(node);
-                const interfaceInfo: InterfaceInfo = {
-                    name: node.name.text,
-                    parent: currentParent || undefined,
-                    path: [...currentPath, node.name.text],
-                    properties: [],
-                    location: {
-                        start: node.getStart(),
-                        end: node.getEnd(),
-                    },
-                    comments: comments ? { leading: comments } : undefined,
-                };
-
-                node.members.forEach((member) => {
-                    if (ts.isPropertySignature(member) && member.name) {
-                        interfaceInfo.properties.push({
-                            name: member.name.getText(),
-                            type: member.type?.getText() || "any",
-                        });
-                    }
-                });
-
-                tsSpecific.interfaces.push(interfaceInfo);
-            } else if (ts.isTypeAliasDeclaration(node)) {
-                tsSpecific.types.push({
-                    name: node.name.text,
-                    parent: currentParent || undefined,
-                    path: [...currentPath, node.name.text],
-                    type: node.type.getText(),
-                });
-            } else if (ts.isEnumDeclaration(node)) {
-                const enumInfo: EnumInfo = {
-                    name: node.name.text,
-                    parent: currentParent || undefined,
-                    path: [...currentPath, node.name.text],
-                    members: [],
-                };
-
-                node.members.forEach((member) => {
-                    if (ts.isEnumMember(member) && member.name) {
-                        enumInfo.members.push(member.name.getText());
-                    }
-                });
-
-                tsSpecific.enums.push(enumInfo);
-            }
-        }
-
-        // 解析类定义(包括JS和TS)
-        if (ts.isClassDeclaration(node) && node.name) {
-            // 获取继承和实现信息
-            const heritageClauses = node.heritageClauses || [];
-            const extendsClause = heritageClauses.find((h) => h.token === ts.SyntaxKind.ExtendsKeyword);
-            const implementsClause = heritageClauses.find((h) => h.token === ts.SyntaxKind.ImplementsKeyword);
+        // 处理类定义
+        else if (ts.isClassDeclaration(node) && node.name) {
+            const heritage = node.heritageClauses || [];
+            const extendsClause = heritage.find((h) => h.token === ts.SyntaxKind.ExtendsKeyword);
+            const implementsClause = heritage.find((h) => h.token === ts.SyntaxKind.ImplementsKeyword);
 
             const classInfo: ClassInfo = {
                 name: node.name.text,
-                parent: currentParent || undefined,
-                path: [...currentPath, node.name.text],
+                parent: currentContext.parent,
+                path: [...currentContext.path, node.name.text],
                 methods: [],
                 properties: [],
                 children: [],
-                extends: extendsClause?.types.map((t) => t.getText()).join(", ") || undefined,
+                extends: extendsClause?.types.map((t) => t.getText()).join(", "),
                 implements: implementsClause?.types.map((t) => t.getText()) || [],
                 prototype: {
                     constructor: node.name.text,
                     __proto__: extendsClause?.types.map((t) => t.getText()).join(", ") || "Object.prototype",
                 },
+                comments: commentData,
+                location: { start: node.getStart() },
             };
 
-            // 保存当前上下文
-            const prevParent = currentParent;
-            const prevPath = [...currentPath];
-            currentParent = node.name.text;
-            currentPath.push(node.name.text);
+            // 进入类作用域
+            contextStack.push(currentContext);
+            currentContext = {
+                parent: node.name.text,
+                path: [...currentContext.path, node.name.text],
+            };
 
-            node.members.forEach((member) => {
-                if (ts.isMethodDeclaration(member) && member.name && node.name) {
-                    // 获取方法装饰器(兼容方式)
-                    const decorators =
-                        (ts.canHaveDecorators(member) && ts.getDecorators(member)?.map((d) => d.getText())) || undefined;
+            ts.forEachChild(node, visitNode);
 
-                    // 解析参数
-                    const parameters: ParameterInfo[] = [];
-                    member.parameters?.forEach((param) => {
-                        if (ts.isParameter(param)) {
-                            parameters.push({
-                                name: param.name.getText(),
-                                type: param.type?.getText() || "any",
-                            });
-                        }
-                    });
+            // 恢复上下文
+            currentContext = contextStack.pop()!;
 
-                    const methodInfo: MethodInfo = {
-                        name: member.name.getText(),
-                        parent: node.name.text,
-                        path: [...currentPath, member.name.getText()],
-                        parameters,
-                        returnType: member.type?.getText() || "void",
-                        isStatic: member.modifiers?.some((m) => m.kind === ts.SyntaxKind.StaticKeyword) || false,
-                        decorators,
-                    };
-                    classInfo.methods.push(methodInfo);
-                    classInfo.children.push(methodInfo);
-                } else if (ts.isPropertyDeclaration(member) && member.name && node.name) {
-                    // 获取属性装饰器
-                    const decorators =
-                        (ts.canHaveDecorators(member) && ts.getDecorators(member)?.map((d) => d.getText())) || undefined;
+            result.classes.push(classInfo);
+        }
 
-                    const propInfo: PropertyInfo = {
-                        name: member.name.getText(),
-                        type: member.type?.getText() || "any",
-                        decorators,
-                    };
+        // 处理方法定义
+        else if (ts.isMethodDeclaration(node) && node.name) {
+            const methodInfo: MethodInfo = {
+                name: node.name.getText(),
+                parent: currentContext.parent,
+                path: [...currentContext.path, node.name.getText()],
+                parameters: [],
+                returnType: node.type?.getText() || "void",
+                isStatic: node.modifiers?.some((m) => m.kind === ts.SyntaxKind.StaticKeyword) || false,
+                isGeneric: !!node.typeParameters?.length,
+                comments: commentData,
+                location: { start: node.getStart() },
+            };
 
-                    classInfo.properties.push(propInfo);
-                    classInfo.children.push({
-                        name: member.name.getText(),
-                        parent: node.name.text,
-                        path: [...currentPath, member.name.getText()],
-                        type: member.type?.getText() || "any",
-                        decorators,
+            node.parameters?.forEach((param) => {
+                if (ts.isParameter(param)) {
+                    methodInfo.parameters.push({
+                        name: param.name.getText(),
+                        type: param.type?.getText() || "any",
                     });
                 }
             });
 
-            result.classes.push(classInfo);
-
-            // 恢复上下文
-            currentParent = prevParent;
-            currentPath = prevPath;
+            const parentClass = result.classes.find((c) => c.name === currentContext.parent);
+            parentClass?.methods.push(methodInfo);
+            parentClass?.children.push(methodInfo);
         }
 
-        // 解析接口定义
+        // 处理属性定义
+        else if (ts.isPropertyDeclaration(node) && node.name) {
+            const propInfo: PropertyInfo & VariableInfo = {
+                name: node.name.getText(),
+                type: node.type?.getText() || "any",
+                parent: currentContext.parent,
+                path: [...currentContext.path, node.name.getText()],
+                comments: commentData,
+                location: { start: node.getStart() },
+            };
+
+            const parentClass = result.classes.find((c) => c.name === currentContext.parent);
+            if (parentClass) {
+                parentClass.properties.push(propInfo);
+                parentClass.children.push(propInfo);
+            }
+        }
+
+        // 处理接口定义
         else if (ts.isInterfaceDeclaration(node)) {
             const interfaceInfo: InterfaceInfo = {
                 name: node.name.text,
-                parent: currentParent || undefined,
-                path: [...currentPath, node.name.text],
+                parent: currentContext.parent,
+                path: [...currentContext.path, node.name.text],
                 properties: [],
+                comments: commentData,
+                location: { start: node.getStart() },
             };
 
-            node.members.forEach((member) => {
-                if (ts.isPropertySignature(member) && member.name) {
-                    interfaceInfo.properties.push({
-                        name: member.name.getText(),
-                        type: member.type?.getText() || "any",
-                    });
-                }
-            });
+            // 进入接口作用域
+            contextStack.push(currentContext);
+            currentContext = {
+                parent: node.name.text,
+                path: [...currentContext.path, node.name.text],
+            };
+
+            ts.forEachChild(node, visitNode);
+
+            // 恢复上下文
+            currentContext = contextStack.pop()!;
 
             result.interfaces.push(interfaceInfo);
         }
 
-        // 解析类型别名
+        // 处理类型别名
         else if (ts.isTypeAliasDeclaration(node)) {
-            // 获取泛型参数
-            const typeParameters = node.typeParameters?.map((tp) => tp.getText()) || undefined;
-
-            const typeInfo: TypeAliasInfo = {
+            result.types.push({
                 name: node.name.text,
-                parent: currentParent || undefined,
-                path: [...currentPath, node.name.text],
+                parent: currentContext.parent,
+                path: [...currentContext.path, node.name.text],
                 type: node.type.getText(),
-                typeParameters,
-            };
-            result.types.push(typeInfo);
+                typeParameters: node.typeParameters?.map((tp) => tp.getText()),
+                comments: commentData,
+                location: { start: node.getStart() },
+            });
         }
 
-        // 解析枚举
+        // 处理枚举
         else if (ts.isEnumDeclaration(node)) {
             const enumInfo: EnumInfo = {
                 name: node.name.text,
-                parent: currentParent || undefined,
-                path: [...currentPath, node.name.text],
+                parent: currentContext.parent,
+                path: [...currentContext.path, node.name.text],
                 members: [],
+                comments: commentData,
+                location: { start: node.getStart() },
             };
 
             node.members.forEach((member) => {
@@ -386,112 +278,86 @@ function parseFile(filePath: string, tsconfg?: string): CodeStructure {
             result.enums.push(enumInfo);
         }
 
-        // 解析函数(包括函数声明和表达式)
-        else if (ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node)) {
+        // 处理函数
+        else if (ts.isFunctionDeclaration(node) || ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
             const funcName = node.name?.text || "(anonymous)";
-            // 获取泛型参数
-            const typeParameters = node.typeParameters?.map((tp) => tp.getText()) || undefined;
-            // 函数声明不支持装饰器
-            const decorators = undefined;
-
             const funcInfo: FunctionInfo = {
                 name: funcName,
-                parent: currentParent || undefined,
-                path: [...currentPath, funcName],
+                parent: currentContext.parent,
+                path: [...currentContext.path, funcName],
                 parameters: [],
                 returnType: node.type?.getText() || "any",
-                typeParameters,
-                isGeneric: !!typeParameters?.length,
-                decorators: undefined, // 函数声明不支持装饰器
+                typeParameters: node.typeParameters?.map((tp) => tp.getText()),
+                isGeneric: !!node.typeParameters?.length,
+                comments: commentData,
+                location: { start: node.getStart() },
             };
+
+            node.parameters?.forEach((param) => {
+                if (ts.isParameter(param)) {
+                    funcInfo.parameters.push({
+                        name: param.name.getText(),
+                        type: param.type?.getText() || "any",
+                    });
+                }
+            });
+
             result.functions.push(funcInfo);
         }
 
-        // 解析对象字面量(JS特有)
-        else if (ts.isObjectLiteralExpression(node)) {
-            node.properties.forEach((prop) => {
-                if (ts.isPropertyAssignment(prop) && prop.name) {
-                    const propName = prop.name.getText();
+        // 处理变量声明
+        else if (ts.isVariableStatement(node)) {
+            node.declarationList.declarations.forEach((decl) => {
+                if (ts.isVariableDeclaration(decl) && ts.isIdentifier(decl.name)) {
                     result.variables.push({
-                        name: propName,
-                        parent: currentParent || undefined,
-                        path: [...currentPath, propName],
-                        type: "object",
+                        name: decl.name.text,
+                        parent: currentContext.parent,
+                        path: [...currentContext.path, decl.name.text],
+                        type: decl.type?.getText() || "any",
+                        comments: commentData,
+                        location: { start: decl.getStart() },
                     });
                 }
             });
         }
 
-        // 解析命名空间
+        // 处理命名空间
         else if (ts.isModuleDeclaration(node) && node.name && ts.isIdentifier(node.name)) {
             const namespaceInfo: NamespaceInfo = {
                 name: node.name.text,
-                parent: currentParent || undefined,
-                path: [...currentPath, node.name.text],
+                parent: currentContext.parent,
+                path: [...currentContext.path, node.name.text],
                 children: [],
+                comments: commentData,
+                location: { start: node.getStart() },
             };
 
-            // 保存当前上下文
-            const prevParent = currentParent;
-            const prevPath = [...currentPath];
-            currentParent = node.name.text;
-            currentPath.push(node.name.text);
+            // 进入命名空间作用域
+            contextStack.push(currentContext);
+            currentContext = {
+                parent: node.name.text,
+                path: [...currentContext.path, node.name.text],
+            };
 
-            // 递归解析命名空间内容
             if (node.body && ts.isModuleBlock(node.body)) {
-                node.body.statements.forEach((statement) => {
-                    if (ts.isClassDeclaration(statement)) {
-                        namespaceInfo.children.push(...result.classes.filter((c) => c.parent === node.name.text));
-                    } else if (ts.isInterfaceDeclaration(statement)) {
-                        namespaceInfo.children.push(...result.interfaces.filter((i) => i.parent === node.name.text));
-                    } else if (ts.isTypeAliasDeclaration(statement)) {
-                        namespaceInfo.children.push(...result.types.filter((t) => t.parent === node.name.text));
-                    } else if (ts.isEnumDeclaration(statement)) {
-                        namespaceInfo.children.push(...result.enums.filter((e) => e.parent === node.name.text));
-                    } else if (ts.isFunctionDeclaration(statement)) {
-                        namespaceInfo.children.push(...result.functions.filter((f) => f.parent === node.name.text));
-                    } else if (ts.isVariableStatement(statement)) {
-                        namespaceInfo.children.push(...result.variables.filter((v) => v.parent === node.name.text));
-                    }
-                });
+                ts.forEachChild(node.body, visitNode);
             }
 
             // 恢复上下文
-            currentParent = prevParent;
-            currentPath = prevPath;
+            currentContext = contextStack.pop()!;
 
             result.namespaces.push(namespaceInfo);
         }
-        // 解析变量
-        else if (ts.isVariableStatement(node)) {
-            node.declarationList.declarations.forEach((decl) => {
-                if (ts.isVariableDeclaration(decl) && ts.isIdentifier(decl.name)) {
-                    const varInfo: VariableInfo = {
-                        name: decl.name.text,
-                        parent: currentParent || undefined,
-                        path: [...currentPath, decl.name.text],
-                        type: decl.type?.getText() || "any",
-                    };
-                    result.variables.push(varInfo);
-                }
-            });
-        }
-    });
 
-    // 合并TS特有解析结果
-    if (isTypeScript) {
-        result.interfaces = tsSpecific.interfaces;
-        result.types = tsSpecific.types;
-        result.enums = tsSpecific.enums;
-    }
+        // 递归处理子节点
+        ts.forEachChild(node, visitNode);
+    };
 
+    // 开始遍历AST
+    ts.forEachChild(sourceFile, visitNode);
     return result;
 }
 
-/**
- * 命令行接口 \
- * 由`core\parser.py#44`调用
- */
 function cli() {
     const filePath = process.argv[2];
     if (!filePath) {
@@ -500,7 +366,7 @@ function cli() {
     }
 
     const result = parseFile(filePath);
-    fs.writeFile("ts-parser/tmp/analyzed.json", JSON.stringify(result, null, 2), (e) => console.error(e));
+    fs.writeFileSync("analyzed.json", JSON.stringify(result, null, 2));
 }
 
 if (require.main === module) cli();

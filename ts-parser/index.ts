@@ -1,4 +1,5 @@
 import * as ts from "typescript";
+import * as fs from "fs";
 
 /**
  * 目前打算支持的
@@ -15,6 +16,7 @@ const TSFileType = ["ts"];
  * 首先功能是列出所有全部定义了的东西（包含局域的） \
  * 第二功能是列出里面包含的逻辑树（含逻辑流、函数调用、实值或者类型的运算操作） \
  * 其内所有包含内容的属性全部都是平面结构 \
+ *
  */
 export interface CodeStructure {
     imports: string[];
@@ -92,51 +94,6 @@ interface VariableInfo extends BaseInfo {
     type: string;
 }
 
-interface OperatorInfo extends BaseInfo {
-    type: string;
-    operands: string[];
-    location: {
-        start: number;
-        end: number;
-    };
-}
-
-interface TemplateLiteralInfo extends BaseInfo {
-    parts: string[];
-    expressions: string[];
-}
-
-interface DecoratorInfo extends BaseInfo {
-    expression: string;
-    target: string;
-}
-
-interface GenericInfo extends BaseInfo {
-    typeParameters: string[];
-}
-
-interface TypeAssertionInfo extends BaseInfo {
-    expression: string;
-    type: string;
-}
-
-interface DestructuringInfo extends BaseInfo {
-    pattern: string;
-    kind: "array" | "object";
-}
-
-interface SpreadOperatorInfo extends BaseInfo {
-    expression: string;
-}
-
-interface LabeledStatementInfo extends BaseInfo {
-    label: string;
-}
-
-interface WithStatementInfo extends BaseInfo {
-    expression: string;
-}
-
 interface PropertyInfo {
     name: string;
     type: string;
@@ -160,18 +117,37 @@ function fileNameTail(filePath: string) {
  */
 function parseFile(filePath: string, tsconfg?: string): CodeStructure {
     const isTypeScript = TSFileType.includes(fileNameTail(filePath));
-
-    const compilerOptions =
-        JSON.parse(
+    // 选择一个配置
+    let compilerOptions;
+    try {
+        console.log(
+            `using ${
+                tsconfg && fileNameTail(tsconfg).toLowerCase() == "json" ? tsconfg : "/ts-parser/parser-default-tsconfig.json"
+            } as tsconfg`
+        );
+        /*
+         *  指定的配置有没有还是说不符合规定
+         *  既然没用那就换默认
+         *  至于内容合不合规范，你问报不报错
+         */
+        compilerOptions = JSON.parse(
             require(tsconfg && fileNameTail(tsconfg).toLowerCase() == "json" ? tsconfg : "") ||
                 require("/ts-parser/parser-default-tsconfig.json")
-        ) ||
-        ({
+        );
+    } catch (error) {
+        // 哪个天才把这个默认文件给删了
+        console.warn(error);
+        console.warn("parser-default-tsconfig.json NOT FUND");
+        console.warn("now using built-in tsconfg in ts-parser/index.ts");
+        compilerOptions = {
             allowJs: true,
             checkJs: false,
             target: ts.ScriptTarget.ESNext,
             module: ts.ModuleKind.CommonJS,
-        } as const);
+        };
+    }
+
+    Object.freeze(compilerOptions);
 
     // 获取注释帮助函数
     const getComments = (node: ts.Node) => {
@@ -514,7 +490,7 @@ function parseFile(filePath: string, tsconfg?: string): CodeStructure {
 
 /**
  * 命令行接口 \
- * 如果你直接调用这个文件
+ * 由`core\parser.py#44`调用
  */
 function cli() {
     const filePath = process.argv[2];
@@ -524,7 +500,7 @@ function cli() {
     }
 
     const result = parseFile(filePath);
-    console.log(JSON.stringify(result, null, 2));
+    fs.writeFile("ts-parser/tmp/analyzed.json", JSON.stringify(result, null, 2), (e) => console.error(e));
 }
 
 if (require.main === module) cli();

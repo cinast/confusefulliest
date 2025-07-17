@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Dict, Optional
@@ -9,7 +10,7 @@ class CodeParser:
         self.logger = logging.getLogger(__name__)
         
     def parse_file(self, file_path: str) -> Optional[Dict]:
-        """Parse a code file and return standardized AST data"""
+        """Parse a code file and return data"""
         path = Path(file_path)
         if not path.exists():
             self.logger.error(f"File not found: {file_path}")
@@ -20,13 +21,23 @@ class CodeParser:
         else:
             self.logger.error(f"Unsupported file type: {path.suffix}")
             return None
+        
             
     def _parse_with_ts_parser(self, file_path: str) -> Optional[Dict]:
         """Call the TypeScript parser and process results"""
+        
+
         try:
             # 使用绝对路径确保能找到文件
             base_dir = Path(__file__).parent.parent
             ts_parser_path = base_dir / "ts-parser" / "index.ts"
+            analyzed_path = base_dir / "ts-parser" / "tmp" / "analyzed.json"
+
+            try : 
+                os.remove(analyzed_path)
+            except Exception as e:
+                self.logger.error(f"Error removing analyzed file: {e}")
+
             self.logger.info(f"Trying to parse with: {ts_parser_path}")
             
             if not ts_parser_path.exists():
@@ -41,7 +52,7 @@ class CodeParser:
             ).stdout.splitlines()[0].strip()
             npm_path = str(Path(node_path).parent / "npx.cmd")
             
-            result = subprocess.run(
+            subprocess.run(
                 [npm_path, "ts-node", str(ts_parser_path), file_path],
                 capture_output=True,
                 text=True,
@@ -50,20 +61,20 @@ class CodeParser:
                 cwd=str(base_dir)
             )
             
-            if result.returncode != 0:
-                self.logger.error(f"Parser error: {result.stderr}")
-                return None
-                
+
             try:
-                ast_data = json.loads(result.stdout) if result.stdout else {}
-            except json.JSONDecodeError:
-                self.logger.error(f"Invalid JSON output: {result.stdout}")
+                with open(analyzed_path, "r", encoding='utf-8') as f:
+                    ast_data = json.load(f)
+                return self._standardize_ast(ast_data)
+            except Exception as e:
+                self.logger.error(f"Failed to read/parse analyzed.json: {str(e)}")
                 return None
-            return self._standardize_ast(ast_data)
             
         except Exception as e:
             self.logger.error(f"Parsing failed: {str(e)}")
             return None
+        
+
             
     def _standardize_ast(self, ast_data: Dict) -> Dict:
         """Convert parser-specific AST to standard format with full details"""

@@ -212,3 +212,4 @@ __marimo__/
 output.drawio/*
 doc/doc.txt
 cm.txt
+ts-parser/tmp/*

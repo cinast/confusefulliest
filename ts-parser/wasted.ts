@@ -11,10 +11,9 @@ const JSFileType = ["js"];
 const TSFileType = ["ts"];
 
 /**
- * 这是代码文件的最高大纲 \
- * 首先功能是列出所有全部定义了的东西（包含局域的） \
- * 第二功能是列出里面包含的逻辑树（含逻辑流、函数调用、实值或者类型的运算操作） \
- * 其内所有包含内容的属性全部都是平面结构 \
+ * 这是代码文件的最高大纲，也是整个文件的解析对象 \
+ * 首先功能是列出所有定义在全局的东西 \
+ * 第二功能是列出里面包含的逻辑树（含逻辑流、函数调用、实值或者类型的运算操作）
  */
 export interface CodeStructure {
     imports: string[];
@@ -25,6 +24,19 @@ export interface CodeStructure {
     functions: FunctionInfo[];
     variables: VariableInfo[];
     namespaces: NamespaceInfo[];
+    controlFlowStatements: ControlFlowStatementInfo[];
+    operationStatements: OperationStatementInfo[];
+    callStatements: CallStatementInfo[];
+    // 平面索引版本保留
+    flat: {
+        classes: ClassInfo[];
+        interfaces: InterfaceInfo[];
+        types: TypeAliasInfo[];
+        enums: EnumInfo[];
+        functions: FunctionInfo[];
+        variables: VariableInfo[];
+        namespaces: NamespaceInfo[];
+    };
 }
 
 interface BaseInfo {
@@ -90,6 +102,30 @@ interface MethodInfo extends FunctionInfo {
 
 interface VariableInfo extends BaseInfo {
     type: string;
+}
+
+interface ControlFlowStatementInfo extends BaseInfo {
+    type: "conditional" | "loop" | "exception" | "debug";
+    nestedStatements: ControlFlowStatementInfo[];
+}
+
+interface OperationStatementInfo extends BaseInfo {
+    type: "arithmetic" | "logical" | "comparison" | "update";
+    expression: string;
+    location: {
+        start: number;
+        end: number;
+    };
+}
+
+interface CallStatementInfo extends BaseInfo {
+    callType: "function" | "method" | "constructor";
+    execType: "normal" | "async" | "generator";
+    expression: string;
+    location: {
+        start: number;
+        end: number;
+    };
 }
 
 interface OperatorInfo extends BaseInfo {
@@ -158,13 +194,14 @@ function fileNameTail(filePath: string) {
  * @param filePath 命令行给的参数,文件实际位置
  * @returns 文件的解析结果
  */
-function parseFile(filePath: string, tsconfg?: string): CodeStructure {
+function parseFile(filePath: string, compilerOptionsPath?: string): CodeStructure {
     const isTypeScript = TSFileType.includes(fileNameTail(filePath));
 
     const compilerOptions =
         JSON.parse(
-            require(tsconfg && fileNameTail(tsconfg).toLowerCase() == "json" ? tsconfg : "") ||
-                require("/ts-parser/parser-default-tsconfig.json")
+            require(compilerOptionsPath && fileNameTail(compilerOptionsPath).toLowerCase() == "json"
+                ? compilerOptionsPath
+                : "") || require("/ts-parser/parser-default-tsconfig.json")
         ) ||
         ({
             allowJs: true,
@@ -204,6 +241,18 @@ function parseFile(filePath: string, tsconfg?: string): CodeStructure {
         functions: [],
         variables: [],
         namespaces: [],
+        controlFlowStatements: [],
+        operationStatements: [],
+        callStatements: [],
+        flat: {
+            classes: [],
+            interfaces: [],
+            types: [],
+            enums: [],
+            functions: [],
+            variables: [],
+            namespaces: [],
+        },
     };
 
     let currentParent: string | null = null;
@@ -213,7 +262,151 @@ function parseFile(filePath: string, tsconfg?: string): CodeStructure {
         return result;
     }
 
+    const parseControlStatement = (node: ts.Node, type: string): ControlFlowStatementInfo => {
+        const info: ControlFlowStatementInfo = {
+            name: type,
+            parent: currentParent || undefined,
+            path: [...currentPath, type],
+            type: type as any,
+            nestedStatements: [],
+            location: {
+                start: node.getStart(),
+                end: node.getEnd(),
+            },
+        };
+
+        // 递归解析嵌套的控制语句
+        node.forEachChild((child) => {
+            if (
+                ts.isIfStatement(child) ||
+                ts.isSwitchStatement(child) ||
+                ts.isForStatement(child) ||
+                ts.isWhileStatement(child) ||
+                ts.isDoStatement(child) ||
+                ts.isTryStatement(child)
+            ) {
+                const childType = ts.isIfStatement(child)
+                    ? "if"
+                    : ts.isSwitchStatement(child)
+                    ? "switch"
+                    : ts.isForStatement(child)
+                    ? "for"
+                    : ts.isWhileStatement(child)
+                    ? "while"
+                    : ts.isDoStatement(child)
+                    ? "do-while"
+                    : "try-catch";
+                info.nestedStatements.push(parseControlStatement(child, childType));
+            }
+        });
+
+        return info;
+    };
+
+    const parseOperator = (node: ts.Node, type: "value" | "type"): OperatorInfo | null => {
+        if (ts.isBinaryExpression(node)) {
+            return {
+                name: node.operatorToken.getText(),
+                type: node.operatorToken.getText(),
+                operands: [node.left.getText(), node.right.getText()],
+                path: [],
+                location: {
+                    start: node.getStart(),
+                    end: node.getEnd(),
+                },
+            };
+        } else if (ts.isTypeOperatorNode(node)) {
+            return {
+                name: node.operator.toString(),
+                type: node.operator.toString(),
+                operands: [node.type.getText()],
+                path: [],
+                location: {
+                    start: node.getStart(),
+                    end: node.getEnd(),
+                },
+            };
+        }
+        return null;
+    };
+
     ts.forEachChild(sourceFile, (node) => {
+        // 解析操作符
+        // 解析表达式语句
+        if (ts.isExpressionStatement(node)) {
+            const expr = node.expression;
+            if (ts.isBinaryExpression(expr)) {
+                const stmt: OperationStatementInfo = {
+                    name: expr.operatorToken.getText(),
+                    parent: currentParent || undefined,
+                    path: [...currentPath],
+                    type: "arithmetic",
+                    expression: expr.getText(),
+                    location: {
+                        start: expr.getStart(),
+                        end: expr.getEnd(),
+                    },
+                };
+                result.operationStatements.push(stmt);
+            } else if (ts.isCallExpression(expr)) {
+                const stmt: CallStatementInfo = {
+                    name: "function call",
+                    parent: currentParent || undefined,
+                    path: [...currentPath],
+                    callType: ts.isNewExpression(expr)
+                        ? "constructor"
+                        : expr.expression.kind === ts.SyntaxKind.PropertyAccessExpression
+                        ? "method"
+                        : "function",
+                    execType: "normal",
+                    expression: expr.getText(),
+                    location: {
+                        start: expr.getStart(),
+                        end: expr.getEnd(),
+                    },
+                };
+                result.callStatements.push(stmt);
+            } else if (ts.isPrefixUnaryExpression(expr) || ts.isPostfixUnaryExpression(expr)) {
+                const stmt: OperationStatementInfo = {
+                    name: expr.operator === ts.SyntaxKind.PlusPlusToken ? "increment" : "decrement",
+                    parent: currentParent || undefined,
+                    path: [...currentPath],
+                    type: "update",
+                    expression: expr.getText(),
+                    location: {
+                        start: expr.getStart(),
+                        end: expr.getEnd(),
+                    },
+                };
+                result.operationStatements.push(stmt);
+            }
+        }
+        // 解析控制流语句
+        if (ts.isIfStatement(node)) {
+            result.controlFlowStatements.push(parseControlStatement(node, "conditional"));
+        } else if (ts.isSwitchStatement(node)) {
+            result.controlFlowStatements.push(parseControlStatement(node, "conditional"));
+        } else if (ts.isForStatement(node)) {
+            result.controlFlowStatements.push(parseControlStatement(node, "loop"));
+        } else if (ts.isWhileStatement(node)) {
+            result.controlFlowStatements.push(parseControlStatement(node, "loop"));
+        } else if (ts.isDoStatement(node)) {
+            result.controlFlowStatements.push(parseControlStatement(node, "loop"));
+        } else if (ts.isTryStatement(node)) {
+            result.controlFlowStatements.push(parseControlStatement(node, "exception"));
+        } else if (ts.isDebuggerStatement(node)) {
+            result.controlFlowStatements.push({
+                name: "debugger",
+                parent: currentParent || undefined,
+                path: [...currentPath],
+                type: "debug",
+                nestedStatements: [],
+                location: {
+                    start: node.getStart(),
+                    end: node.getEnd(),
+                },
+            });
+        }
         // 解析导入语句
         if (ts.isImportDeclaration(node)) {
             const moduleSpecifier = node.moduleSpecifier.getText();
@@ -350,6 +543,7 @@ function parseFile(filePath: string, tsconfg?: string): CodeStructure {
             });
 
             result.classes.push(classInfo);
+            result.flat.classes.push(classInfo);
 
             // 恢复上下文
             currentParent = prevParent;
@@ -375,6 +569,7 @@ function parseFile(filePath: string, tsconfg?: string): CodeStructure {
             });
 
             result.interfaces.push(interfaceInfo);
+            result.flat.interfaces.push(interfaceInfo);
         }
 
         // 解析类型别名
@@ -390,6 +585,7 @@ function parseFile(filePath: string, tsconfg?: string): CodeStructure {
                 typeParameters,
             };
             result.types.push(typeInfo);
+            result.flat.types.push(typeInfo);
         }
 
         // 解析枚举
@@ -408,6 +604,7 @@ function parseFile(filePath: string, tsconfg?: string): CodeStructure {
             });
 
             result.enums.push(enumInfo);
+            result.flat.enums.push(enumInfo);
         }
 
         // 解析函数(包括函数声明和表达式)
@@ -429,6 +626,7 @@ function parseFile(filePath: string, tsconfg?: string): CodeStructure {
                 decorators: undefined, // 函数声明不支持装饰器
             };
             result.functions.push(funcInfo);
+            result.flat.functions.push(funcInfo);
         }
 
         // 解析对象字面量(JS特有)
@@ -485,6 +683,7 @@ function parseFile(filePath: string, tsconfg?: string): CodeStructure {
             currentPath = prevPath;
 
             result.namespaces.push(namespaceInfo);
+            result.flat.namespaces.push(namespaceInfo);
         }
         // 解析变量
         else if (ts.isVariableStatement(node)) {
@@ -497,6 +696,7 @@ function parseFile(filePath: string, tsconfg?: string): CodeStructure {
                         type: decl.type?.getText() || "any",
                     };
                     result.variables.push(varInfo);
+                    result.flat.variables.push(varInfo);
                 }
             });
         }
@@ -507,6 +707,10 @@ function parseFile(filePath: string, tsconfg?: string): CodeStructure {
         result.interfaces = tsSpecific.interfaces;
         result.types = tsSpecific.types;
         result.enums = tsSpecific.enums;
+
+        result.flat.interfaces.push(...tsSpecific.interfaces);
+        result.flat.types.push(...tsSpecific.types);
+        result.flat.enums.push(...tsSpecific.enums);
     }
 
     return result;

@@ -346,3 +346,4 @@ if __name__ == "__main__":
         ]
     }
     generator.generate_drawio(sample_ast, "output.drawio")
+

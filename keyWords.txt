@@ -1,0 +1,17 @@
+[
+  'break',       'case',       'catch',     'class',
+  'const',       'continue',   'debugger',  'default',
+  'delete',      'do',         'else',      'enum',
+  'export',      'extends',    'finally',   'for',
+  'function',    'if',         'import',    'new',
+  'return',      'super',      'switch',    'this',
+  'throw',       'try',        'var',       'while',
+  'with',        'implements', 'interface', 'let',
+  'package',     'private',    'protected', 'public',
+  'static',      'yield',      'abstract',  'accessor',
+  'as',          'assert',     'async',     'await',
+  'constructor', 'declare',    'get',       'module',
+  'namespace',   'out',        'readonly',  'require',
+  'set',         'type',       'using',     'from',
+  'global',      'override',   'of'
+]

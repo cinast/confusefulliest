@@ -4,6 +4,7 @@ from typing import Dict, List
 class DrawIOGenerator:
     def __init__(self):
         """Initialize with enhanced Palenight Theme styles"""
+        # colors from Palenight
         self.theme = {
             "background": "#292D3E",
             "primary": "#7EA6E0",

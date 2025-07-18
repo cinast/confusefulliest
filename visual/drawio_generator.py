@@ -1,10 +1,14 @@
 import drawpyo
-from typing import Dict
+from typing import Dict, TypedDict
+import math
 
 class DrawIOGenerator:
-    def __init__(self):
+    def __init__(self,display_aspect_ratio = 3/2,height:float = None):
         """Initialize with enhanced Palenight Theme styles"""
         # colors from Palenight
+
+        self.display_aspect_ratio = display_aspect_ratio
+
         self.theme = {
             "background": "#292D3E",
             "primary": "#7EA6E0",
@@ -107,21 +111,136 @@ class DrawIOGenerator:
         return width, height
 
     def _sort_elements(self, elements):
-        """Sort elements by type weight and complexity"""
-        type_weights = {
-            'class': 100,
-            'function': 80,
-            'property': 60,
-            'method': 70
-        }
-        return sorted(elements,
-            key=lambda x: (
-                -type_weights.get(x['type'], 50),
-                -len(x.get('children', [])),
-                x.get('name', '')
-            ),
-            reverse=True
-        )
+
+        class RectObject(TypedDict):
+            w: float  # 横长
+            h: float  # 竖长
+            no: int   # 编号
+            con: Dict[int, float]  # 连系度序列
+
+        def rectangle_packing(rects: list[RectObject], ratio: float, tolerance: float = 1e-5):
+            """
+            矩形包装算法
+            :param rects: 小矩形列表
+            :param ratio: 大矩形长宽比 A/B
+            :param tolerance: 二分搜索精度
+            :return: (min_area, A, B, positions)
+            """
+            if not rects:
+                return 0.0, 0.0, 0.0, []
+
+            n = len(rects)
+            # 1. 计算B的搜索范围
+            total_area = sum(rect['w'] * rect['h'] for rect in rects)
+            max_height = max(rect['h'] for rect in rects)
+            # B的下界
+            B_low = max(max_height, math.sqrt(total_area / ratio))
+            # B的上界初始估计
+            B_high = B_low * 2.0
+
+            # 2. 天际线放置算法
+            def try_place(B: float):
+                A = ratio * B
+                skyline = [(0.0, A, 0.0)]  # (x_start, x_end, y)
+                positions = [None] * n
+
+                # 按高度降序排序矩形
+                sorted_rects = sorted(rects, key=lambda r: -r['h'])
+
+                for rect in sorted_rects:
+                    w, h = rect['w'], rect['h']
+                    best_y = float('inf')
+                    best_x = None
+                    best_seg_idx = None
+
+                    for seg_idx, seg in enumerate(skyline):
+                        x_start, x_end, y_current = seg
+                        seg_length = x_end - x_start
+
+                        if seg_length >= w and y_current + h <= B:
+                            if y_current < best_y or (y_current == best_y and x_start < best_x):
+                                best_y = y_current
+                                best_x = x_start
+                                best_seg_idx = seg_idx
+
+                    if best_seg_idx is None:
+                        return None
+
+                    positions[rect['no']] = (best_x, best_y)
+                    seg = skyline.pop(best_seg_idx)
+                    x_start, x_end, y_current = seg
+
+                    new_segments = []
+                    if x_start < best_x:
+                        new_segments.append((x_start, best_x, y_current))
+                    new_segments.append((best_x, best_x + w, y_current + h))
+                    if best_x + w < x_end:
+                        new_segments.append((best_x + w, x_end, y_current))
+
+                    skyline[best_seg_idx:best_seg_idx] = new_segments
+                    merge_skyline(skyline)
+
+                return positions
+
+            def merge_skyline(skyline):
+                skyline.sort(key=lambda s: s[0])
+                i = 0
+                while i < len(skyline) - 1:
+                    s1 = skyline[i]
+                    s2 = skyline[i+1]
+                    if s1[2] == s2[2] and abs(s1[1] - s2[0]) < 1e-6:
+                        skyline[i] = (s1[0], s2[1], s1[2])
+                        skyline.pop(i+1)
+                    else:
+                        i += 1
+
+            # 3. 二分搜索最小B值
+            min_B = None
+            while B_high - B_low > tolerance:
+                B_mid = (B_low + B_high) / 2.0
+                if try_place(B_mid) is not None:
+                    min_B = B_mid
+                    B_high = B_mid
+                else:
+                    B_low = B_mid
+
+            # 4. 最终放置
+            if min_B is None:
+                # 线性扩大上界直到找到解
+                while True:
+                    positions = try_place(B_high)
+                    if positions is not None:
+                        min_B = B_high
+                        break
+                    B_high *= 1.5
+                    if B_high > 100 * B_low:  # 防止无限循环
+                        raise ValueError("无法找到可行解，请检查输入")
+            else:
+                positions = try_place(min_B)
+
+            A = ratio * min_B
+            min_area = A * min_B
+            return min_area, A, min_B, positions
+        
+        # 转换elements为RectObject列表
+        rects = []
+        for i, elem in enumerate(elements):
+            w, h = self._calculate_container_size(elem)
+            rects.append({
+                'w': w,
+                'h': h,
+                'no': i,
+                'con': {}  # 留空供后续填充
+            })
+        
+        _, A, B, positions = rectangle_packing(rects,self.display_aspect_ratio)
+        
+        # 根据位置排序元素
+        sorted_elements = [None] * len(elements)
+        for i, pos in enumerate(positions):
+            sorted_elements[i] = elements[i]
+            
+        return sorted_elements
 
     def _create_node_container(self, page, node, x, y, parent, is_top_level=False):
         """Create a container with calculated size and layout"""
@@ -346,4 +465,3 @@ if __name__ == "__main__":
         ]
     }
     generator.generate_drawio(sample_ast, "output.drawio")
-

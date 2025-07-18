@@ -33,11 +33,11 @@ class CodeParser:
             ts_parser_path = base_dir / "ts-parser" / "index.ts"
             analyzed_path = base_dir / "ts-parser" / "tmp" / "analyzed.json"
 
-            try : 
-                os.remove(analyzed_path)
-            except Exception as e:
-                self.logger.error(f"Error removing analyzed file: {e}")
-
+            # try : 
+            #     os.remove(analyzed_path)
+            # except Exception as e:
+                
+            
             self.logger.info(f"Trying to parse with: {ts_parser_path}")
             
             if not ts_parser_path.exists():

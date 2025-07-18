@@ -11,6 +11,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
 Object.defineProperty(exports, "__esModule", { value: true });
 var ts = require("typescript");
 var fs = require("fs");
+var crypto_1 = require("crypto");
 ("use strict");
 // 支持的扩展名类型
 var JSFileType = ["js"];
@@ -75,7 +76,7 @@ function measurePerformance(name, fn) {
     return result;
 }
 function getComments(node) {
-    if (!node) {
+    if (!node || !node.getSourceFile) {
         return {
             leading: [],
             trailing: [],
@@ -112,12 +113,11 @@ function getModifiers(node) {
         return ts.SyntaxKind[mod.kind];
     });
 }
-function getDecorators(node) {
-    if (!("decorators" in node))
-        return undefined;
-    var decorators = node.decorators;
-    return decorators === null || decorators === void 0 ? void 0 : decorators.map(function (d) { return d.getText(); });
-}
+// function getDecorators(node: ts.Node): string[] | undefined {
+//     if (!"decorators" in node) return undefined;
+//     const decorators = (node as any).decorators as ts.NodeArray<ts.Decorator> | undefined;
+//     return decorators?.map((d) => d.getText());
+// }
 function parseFile(filePath) {
     if (!fs.existsSync(filePath)) {
         console.error("\u6587\u4EF6\u4E0D\u5B58\u5728: ".concat(filePath));
@@ -129,10 +129,11 @@ function parseFile(filePath) {
         allowJs: true,
         strict: false,
         skipLibCheck: true,
+        experimentalDecorators: true,
     };
     var program = ts.createProgram([filePath], compilerOptions);
     var sourceFile = program.getSourceFile(filePath);
-    var resultGlobalScope = {
+    var CodeStructure = {
         imports: [],
         classes: [],
         interfaces: [],
@@ -152,259 +153,286 @@ function parseFile(filePath) {
         var _a, _b, _c, _d, _e, _f, _g, _h, _j;
         if (!node)
             return;
-        try {
-            var comments = getComments(node);
-            var commentData_1 = {
-                leading: comments.leading.length ? comments.leading : undefined,
-                trailing: comments.trailing.length ? comments.trailing : undefined,
-                jsdoc: comments.jsdoc,
+        var id = (0, crypto_1.randomUUID)();
+        var comments = getComments(node);
+        var commentData = {
+            leading: comments.leading.length ? comments.leading : undefined,
+            trailing: comments.trailing.length ? comments.trailing : undefined,
+            jsdoc: comments.jsdoc,
+        };
+        // 获取位置信息
+        // const start = node.getStart();
+        // const end = node.getEnd();
+        // 处理导入语句
+        if (ts.isImportDeclaration(node)) {
+            var moduleSpecifier = node.moduleSpecifier.getText();
+            CodeStructure.imports.push(moduleSpecifier.replace(/['"]/g, ""));
+        }
+        // 处理类定义
+        else if (ts.isClassDeclaration(node) && node.name) {
+            var heritage = node.heritageClauses || [];
+            var extendsClause = heritage.find(function (h) { return h.token === ts.SyntaxKind.ExtendsKeyword; });
+            var implementsClause = heritage.find(function (h) { return h.token === ts.SyntaxKind.ImplementsKeyword; });
+            var className = (node === null || node === void 0 ? void 0 : node.name.text) || "(anonymous class ".concat(id, ")");
+            var classInfo = {
+                name: className,
+                parent: currentContext.parent,
+                path: __spreadArray(__spreadArray([], currentContext.path, true), [className], false),
+                methods: [],
+                properties: [],
+                children: [],
+                extends: extendsClause === null || extendsClause === void 0 ? void 0 : extendsClause.types.map(function (t) { return t.getText(); }).join(", "),
+                implements: (implementsClause === null || implementsClause === void 0 ? void 0 : implementsClause.types.map(function (t) { return t.getText(); })) || [],
+                modifiers: getModifiers(node),
+                prototype: {
+                    constructor: className,
+                    __proto__: (extendsClause === null || extendsClause === void 0 ? void 0 : extendsClause.types.map(function (t) { return t.getText(); }).join(", ")) || "Object.prototype",
+                },
+                comments: commentData,
+                location: {
+                    start: node.getStart(),
+                    end: node.getEnd(),
+                },
+                id: id,
             };
-            // 获取位置信息
-            var start = node.getStart();
-            var end = node.getEnd();
-            var startLine = sourceFile.getLineAndCharacterOfPosition(start).line + 1;
-            var endLine = sourceFile.getLineAndCharacterOfPosition(end).line + 1;
-            // 处理导入语句
-            if (ts.isImportDeclaration(node)) {
-                var moduleSpecifier = node.moduleSpecifier.getText();
-                resultGlobalScope.imports.push(moduleSpecifier.replace(/['"]/g, ""));
-            }
-            // 处理类定义
-            else if (ts.isClassDeclaration(node) && node.name) {
-                var heritage = node.heritageClauses || [];
-                var extendsClause = heritage.find(function (h) { return h.token === ts.SyntaxKind.ExtendsKeyword; });
-                var implementsClause = heritage.find(function (h) { return h.token === ts.SyntaxKind.ImplementsKeyword; });
-                var classInfo = {
-                    name: node.name.text,
-                    parent: currentContext.parent,
-                    path: __spreadArray(__spreadArray([], currentContext.path, true), [node.name.text], false),
-                    methods: [],
-                    properties: [],
-                    children: [],
-                    extends: extendsClause === null || extendsClause === void 0 ? void 0 : extendsClause.types.map(function (t) { return t.getText(); }).join(", "),
-                    implements: (implementsClause === null || implementsClause === void 0 ? void 0 : implementsClause.types.map(function (t) { return t.getText(); })) || [],
-                    modifiers: getModifiers(node),
-                    prototype: {
-                        constructor: node.name.text,
-                        __proto__: (extendsClause === null || extendsClause === void 0 ? void 0 : extendsClause.types.map(function (t) { return t.getText(); }).join(", ")) || "Object.prototype",
-                    },
-                    comments: commentData_1,
-                    location: { start: start, end: end, lineStart: startLine, lineEnd: endLine },
-                };
-                // 进入类作用域
-                contextStack.push(currentContext);
-                currentContext = {
-                    parent: node.name.text,
-                    path: __spreadArray(__spreadArray([], currentContext.path, true), [node.name.text], false),
-                };
-                ts.forEachChild(node, visitNode);
-                // 恢复上下文
-                currentContext = contextStack.pop();
-                resultGlobalScope.classes.push(classInfo);
-            }
-            // 处理方法定义
-            else if (ts.isMethodDeclaration(node) && node.name) {
-                var modifiers = getModifiers(node);
-                var methodInfo_1 = {
-                    name: node.name.getText(),
-                    parent: currentContext.parent,
-                    path: __spreadArray(__spreadArray([], currentContext.path, true), [node.name.getText()], false),
-                    modifiers: modifiers,
-                    parameters: [],
-                    returnType: ((_a = node.type) === null || _a === void 0 ? void 0 : _a.getText()) || "void",
-                    typeParameters: (_b = node.typeParameters) === null || _b === void 0 ? void 0 : _b.map(function (tp) { return tp.getText(); }),
-                    decorators: getDecorators(node),
-                    location: { start: start, end: end, lineStart: startLine, lineEnd: endLine },
-                    comments: commentData_1,
-                    // 提取访问修饰符和定义修饰符
-                    accessModifier: modifiers.filter(function (m) { return ["public", "private", "protected", "readonly"].includes(m); }),
-                    definingModifier: modifiers.filter(function (m) {
-                        return ["static", "abstract", "get", "set", "constructor"].includes(m);
-                    }),
-                };
-                (_c = node.parameters) === null || _c === void 0 ? void 0 : _c.forEach(function (param) {
-                    var _a;
-                    if (ts.isParameter(param)) {
-                        methodInfo_1.parameters.push({
-                            name: param.name.getText(),
-                            type: ((_a = param.type) === null || _a === void 0 ? void 0 : _a.getText()) || "any",
-                            modifiers: getModifiers(param),
-                            decorators: getDecorators(param),
-                        });
-                    }
-                });
-                var parentClass = resultGlobalScope.classes.find(function (c) { return c.name === currentContext.parent; });
-                if (parentClass) {
-                    parentClass.methods.push(methodInfo_1);
-                    parentClass.children.push(methodInfo_1);
+            // 进入类作用域
+            contextStack.push(currentContext);
+            currentContext = {
+                parent: className,
+                path: __spreadArray(__spreadArray([], currentContext.path, true), [className], false),
+            };
+            ts.forEachChild(node, visitNode);
+            // 恢复上下文
+            currentContext = contextStack.pop();
+            CodeStructure.classes.push(classInfo);
+        }
+        // 处理方法定义
+        else if (ts.isMethodDeclaration(node) && node.name) {
+            var modifiers = getModifiers(node);
+            var methodInfo_1 = {
+                name: node.name.getText(),
+                parent: currentContext.parent,
+                path: __spreadArray(__spreadArray([], currentContext.path, true), [node.name.getText()], false),
+                modifiers: modifiers,
+                parameters: [],
+                returnType: ((_a = node.type) === null || _a === void 0 ? void 0 : _a.getText()) || "void",
+                typeParameters: (_b = node.typeParameters) === null || _b === void 0 ? void 0 : _b.map(function (tp) { return tp.getText(); }),
+                decorators: undefined,
+                location: {
+                    start: node.getStart(),
+                    end: node.getEnd(),
+                },
+                comments: commentData,
+                // 提取访问修饰符和定义修饰符
+                accessModifier: modifiers.filter(function (m) { return ["public", "private", "protected", "readonly"].includes(m); }),
+                definingModifier: modifiers.filter(function (m) { return ["static", "abstract", "get", "set", "constructor"].includes(m); }),
+                id: id,
+            };
+            (_c = node.parameters) === null || _c === void 0 ? void 0 : _c.forEach(function (param) {
+                var _a;
+                if (ts.isParameter(param)) {
+                    methodInfo_1.parameters.push({
+                        name: param.name.getText(),
+                        type: ((_a = param.type) === null || _a === void 0 ? void 0 : _a.getText()) || "any",
+                        modifiers: getModifiers(param),
+                        decorators: undefined,
+                    });
                 }
-            }
-            // 处理属性定义
-            else if (ts.isPropertyDeclaration(node) && node.name) {
-                var modifiers = getModifiers(node);
-                var propInfo = {
-                    name: node.name.getText(),
-                    type: ((_d = node.type) === null || _d === void 0 ? void 0 : _d.getText()) || "any",
-                    decorators: getDecorators(node),
-                    accessModifier: modifiers.filter(function (m) { return ["public", "private", "protected", "readonly"].includes(m); }),
-                    definingModifier: modifiers.filter(function (m) { return ["static", "abstract", "accessor"].includes(m); }),
-                    parent: currentContext.parent,
-                    path: __spreadArray(__spreadArray([], currentContext.path, true), [node.name.getText()], false),
-                    comments: commentData_1,
-                    location: { start: start, end: end, lineStart: startLine, lineEnd: endLine },
-                };
-                var parentClass = resultGlobalScope.classes.find(function (c) { return c.name === currentContext.parent; });
-                if (parentClass) {
-                    parentClass.properties.push(propInfo);
-                    parentClass.children.push(propInfo);
-                }
-            }
-            // 处理接口定义
-            else if (ts.isInterfaceDeclaration(node)) {
-                var interfaceInfo = {
-                    name: node.name.text,
-                    parent: currentContext.parent,
-                    path: __spreadArray(__spreadArray([], currentContext.path, true), [node.name.text], false),
-                    properties: [],
-                    modifiers: getModifiers(node),
-                    comments: commentData_1,
-                    location: { start: start, end: end, lineStart: startLine, lineEnd: endLine },
-                };
-                // 进入接口作用域
-                contextStack.push(currentContext);
-                currentContext = {
-                    parent: node.name.text,
-                    path: __spreadArray(__spreadArray([], currentContext.path, true), [node.name.text], false),
-                };
-                ts.forEachChild(node, visitNode);
-                // 恢复上下文
-                currentContext = contextStack.pop();
-                resultGlobalScope.interfaces.push(interfaceInfo);
-            }
-            // 处理类型别名
-            else if (ts.isTypeAliasDeclaration(node)) {
-                resultGlobalScope.types.push({
-                    name: node.name.text,
-                    parent: currentContext.parent,
-                    path: __spreadArray(__spreadArray([], currentContext.path, true), [node.name.text], false),
-                    type: node.type.getText(),
-                    typeParameters: (_e = node.typeParameters) === null || _e === void 0 ? void 0 : _e.map(function (tp) { return tp.getText(); }),
-                    modifiers: getModifiers(node),
-                    comments: commentData_1,
-                    location: { start: start, end: end, lineStart: startLine, lineEnd: endLine },
-                });
-            }
-            // 处理枚举
-            else if (ts.isEnumDeclaration(node)) {
-                var enumInfo_1 = {
-                    name: node.name.text,
-                    parent: currentContext.parent,
-                    path: __spreadArray(__spreadArray([], currentContext.path, true), [node.name.text], false),
-                    members: [],
-                    modifiers: getModifiers(node),
-                    comments: commentData_1,
-                    location: { start: start, end: end, lineStart: startLine, lineEnd: endLine },
-                };
-                node.members.forEach(function (member) {
-                    if (ts.isEnumMember(member) && member.name) {
-                        enumInfo_1.members.push(member.name.getText());
-                    }
-                });
-                resultGlobalScope.enums.push(enumInfo_1);
-            }
-            // 处理函数
-            else if (ts.isFunctionDeclaration(node) || ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
-                var funcName = ((_f = node.name) === null || _f === void 0 ? void 0 : _f.text) || "(anonymous)";
-                var modifiers = getModifiers(node);
-                var funcInfo_1 = {
-                    name: funcName,
-                    parent: currentContext.parent,
-                    path: __spreadArray(__spreadArray([], currentContext.path, true), [funcName], false),
-                    modifiers: modifiers,
-                    parameters: [],
-                    returnType: ((_g = node.type) === null || _g === void 0 ? void 0 : _g.getText()) || "any",
-                    typeParameters: (_h = node.typeParameters) === null || _h === void 0 ? void 0 : _h.map(function (tp) { return tp.getText(); }),
-                    decorators: getDecorators(node),
-                    comments: commentData_1,
-                    location: { start: start, end: end, lineStart: startLine, lineEnd: endLine },
-                };
-                (_j = node.parameters) === null || _j === void 0 ? void 0 : _j.forEach(function (param) {
-                    var _a;
-                    if (ts.isParameter(param)) {
-                        funcInfo_1.parameters.push({
-                            name: param.name.getText(),
-                            type: ((_a = param.type) === null || _a === void 0 ? void 0 : _a.getText()) || "any",
-                            modifiers: getModifiers(param),
-                            decorators: getDecorators(param),
-                        });
-                    }
-                });
-                resultGlobalScope.functions.push(funcInfo_1);
-            }
-            // 处理变量声明
-            else if (ts.isVariableStatement(node)) {
-                var modifiers_1 = getModifiers(node);
-                node.declarationList.declarations.forEach(function (decl) {
-                    var _a, _b;
-                    if (ts.isVariableDeclaration(decl) && ts.isIdentifier(decl.name)) {
-                        var definingModifier = node.declarationList.flags & ts.NodeFlags.Const
-                            ? "const"
-                            : node.declarationList.flags & ts.NodeFlags.Let
-                                ? "let"
-                                : "var";
-                        var valueScope = currentContext.parent
-                            ? "block"
-                            : ((_a = node.parent) === null || _a === void 0 ? void 0 : _a.kind) === ts.SyntaxKind.SourceFile
-                                ? "global"
-                                : "function";
-                        resultGlobalScope.variables.push({
-                            name: decl.name.text,
-                            parent: currentContext.parent,
-                            path: __spreadArray(__spreadArray([], currentContext.path, true), [decl.name.text], false),
-                            type: ((_b = decl.type) === null || _b === void 0 ? void 0 : _b.getText()) || "any",
-                            definingModifier: definingModifier,
-                            modifiers: modifiers_1,
-                            valueScope: valueScope,
-                            comments: commentData_1,
-                            location: {
-                                start: decl.getStart(),
-                                end: decl.getEnd(),
-                                lineStart: sourceFile.getLineAndCharacterOfPosition(decl.getStart()).line + 1,
-                                lineEnd: sourceFile.getLineAndCharacterOfPosition(decl.getEnd()).line + 1,
-                            },
-                        });
-                    }
-                });
-            }
-            // 处理命名空间
-            else if (ts.isModuleDeclaration(node) && node.name && ts.isIdentifier(node.name)) {
-                var modifiers = getModifiers(node);
-                var namespaceInfo = {
-                    name: node.name.text,
-                    parent: currentContext.parent,
-                    path: __spreadArray(__spreadArray([], currentContext.path, true), [node.name.text], false),
-                    children: [],
-                    modifiers: modifiers,
-                    comments: commentData_1,
-                    location: { start: start, end: end, lineStart: startLine, lineEnd: endLine },
-                };
-                // 进入命名空间作用域
-                contextStack.push(currentContext);
-                currentContext = {
-                    parent: node.name.text,
-                    path: __spreadArray(__spreadArray([], currentContext.path, true), [node.name.text], false),
-                };
-                if (node.body && ts.isModuleBlock(node.body)) {
-                    ts.forEachChild(node.body, visitNode);
-                }
-                // 恢复上下文
-                currentContext = contextStack.pop();
-                resultGlobalScope.namespaces.push(namespaceInfo);
+            });
+            var parentClass = CodeStructure.classes.find(function (c) { return c.name === currentContext.parent; });
+            if (parentClass) {
+                parentClass.methods.push(methodInfo_1);
+                parentClass.children.push(methodInfo_1);
             }
         }
-        catch (e) {
-            var err = e;
-            console.error("\u5904\u7406\u8282\u70B9\u65F6\u51FA\u9519: ".concat(err.message));
+        // 处理属性定义
+        else if (ts.isPropertyDeclaration(node) && node.name) {
+            var modifiers = getModifiers(node);
+            var propInfo = {
+                name: node.name.getText(),
+                type: ((_d = node.type) === null || _d === void 0 ? void 0 : _d.getText()) || "any",
+                decorators: undefined,
+                accessModifier: modifiers.filter(function (m) { return ["public", "private", "protected", "readonly"].includes(m); }),
+                definingModifier: modifiers.filter(function (m) { return ["static", "abstract", "accessor"].includes(m); }),
+                parent: currentContext.parent,
+                path: __spreadArray(__spreadArray([], currentContext.path, true), [node.name.getText()], false),
+                comments: commentData,
+                location: {
+                    start: node.getStart(),
+                    end: node.getEnd(),
+                },
+                id: id,
+            };
+            var parentClass = CodeStructure.classes.find(function (c) { return c.name === currentContext.parent; });
+            if (parentClass) {
+                parentClass.properties.push(propInfo);
+                parentClass.children.push(propInfo);
+            }
+        }
+        // 处理接口定义
+        else if (ts.isInterfaceDeclaration(node)) {
+            var interfaceName = (node === null || node === void 0 ? void 0 : node.name.text) || "(anonymous interface ".concat(id, ")");
+            var interfaceInfo = {
+                name: interfaceName,
+                parent: currentContext.parent,
+                path: __spreadArray(__spreadArray([], currentContext.path, true), [interfaceName], false),
+                properties: [],
+                modifiers: getModifiers(node),
+                comments: commentData,
+                location: {
+                    start: node.getStart(),
+                    end: node.getEnd(),
+                },
+                id: id,
+            };
+            // 进入接口作用域
+            contextStack.push(currentContext);
+            currentContext = {
+                parent: interfaceName,
+                path: __spreadArray(__spreadArray([], currentContext.path, true), [interfaceName], false),
+            };
+            ts.forEachChild(node, visitNode);
+            // 恢复上下文
+            currentContext = contextStack.pop();
+            CodeStructure.interfaces.push(interfaceInfo);
+        }
+        // 处理类型别名
+        else if (ts.isTypeAliasDeclaration(node)) {
+            var typeAliasName = (node === null || node === void 0 ? void 0 : node.name.text) || "(anonymous type alias ".concat(id, ")");
+            CodeStructure.types.push({
+                name: typeAliasName,
+                parent: currentContext.parent,
+                path: __spreadArray(__spreadArray([], currentContext.path, true), [typeAliasName], false),
+                type: node.type.getText(),
+                typeParameters: (_e = node.typeParameters) === null || _e === void 0 ? void 0 : _e.map(function (tp) { return tp.getText(); }),
+                modifiers: getModifiers(node),
+                comments: commentData,
+                location: {
+                    start: node.getStart(),
+                    end: node.getEnd(),
+                },
+                id: id,
+            });
+        }
+        // 处理枚举
+        else if (ts.isEnumDeclaration(node)) {
+            var enumName = (node === null || node === void 0 ? void 0 : node.name.text) || "(anonymous enum ".concat(id, ")");
+            var enumInfo_1 = {
+                name: enumName,
+                parent: currentContext.parent,
+                path: __spreadArray(__spreadArray([], currentContext.path, true), [enumName], false),
+                members: [],
+                modifiers: getModifiers(node),
+                comments: commentData,
+                location: {
+                    start: node.getStart(),
+                    end: node.getEnd(),
+                },
+                id: id,
+            };
+            node.members.forEach(function (member) {
+                if (ts.isEnumMember(member) && member.name) {
+                    enumInfo_1.members.push(member.name.getText());
+                }
+            });
+            CodeStructure.enums.push(enumInfo_1);
+        }
+        // 处理函数
+        else if (ts.isFunctionDeclaration(node) || ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
+            var funcName = ((_f = node.name) === null || _f === void 0 ? void 0 : _f.text) || "(anonymous function ".concat(id, ")");
+            var modifiers = getModifiers(node);
+            var funcInfo_1 = {
+                name: funcName,
+                parent: currentContext.parent,
+                path: __spreadArray(__spreadArray([], currentContext.path, true), [funcName], false),
+                modifiers: modifiers,
+                parameters: [],
+                returnType: ((_g = node.type) === null || _g === void 0 ? void 0 : _g.getText()) || "any",
+                typeParameters: (_h = node.typeParameters) === null || _h === void 0 ? void 0 : _h.map(function (tp) { return tp.getText(); }),
+                decorators: undefined,
+                comments: commentData,
+                location: {
+                    start: node.getStart(),
+                    end: node.getEnd(),
+                },
+                id: id,
+            };
+            (_j = node.parameters) === null || _j === void 0 ? void 0 : _j.forEach(function (param) {
+                var _a;
+                if (ts.isParameter(param)) {
+                    funcInfo_1.parameters.push({
+                        name: param.name.getText(),
+                        type: ((_a = param.type) === null || _a === void 0 ? void 0 : _a.getText()) || "any",
+                        modifiers: getModifiers(param),
+                        decorators: undefined,
+                    });
+                }
+            });
+            CodeStructure.functions.push(funcInfo_1);
+        }
+        // 处理变量声明
+        else if (ts.isVariableStatement(node)) {
+            var modifiers_1 = getModifiers(node);
+            node.declarationList.declarations.forEach(function (decl) {
+                var _a, _b;
+                if (ts.isVariableDeclaration(decl) && ts.isIdentifier(decl.name)) {
+                    var definingModifier = node.declarationList.flags & ts.NodeFlags.Const
+                        ? "const"
+                        : node.declarationList.flags & ts.NodeFlags.Let
+                            ? "let"
+                            : "var";
+                    var valueScope = currentContext.parent
+                        ? "block"
+                        : ((_a = node.parent) === null || _a === void 0 ? void 0 : _a.kind) === ts.SyntaxKind.SourceFile
+                            ? "global"
+                            : "function";
+                    CodeStructure.variables.push({
+                        name: decl.name.text,
+                        parent: currentContext.parent,
+                        path: __spreadArray(__spreadArray([], currentContext.path, true), [decl.name.text], false),
+                        type: ((_b = decl.type) === null || _b === void 0 ? void 0 : _b.getText()) || "any",
+                        definingModifier: definingModifier,
+                        modifiers: modifiers_1,
+                        valueScope: valueScope,
+                        comments: commentData,
+                        location: {
+                            start: decl.getStart(),
+                            end: decl.getEnd(),
+                        },
+                        id: id,
+                    });
+                }
+            });
+        }
+        // 处理命名空间
+        else if (ts.isModuleDeclaration(node) && node.name && ts.isIdentifier(node.name)) {
+            var modifiers = getModifiers(node);
+            var namespaceName = (node === null || node === void 0 ? void 0 : node.name.text) || "(anonymous namespace ".concat(id, ")");
+            var namespaceInfo = {
+                name: namespaceName,
+                parent: currentContext.parent,
+                path: __spreadArray(__spreadArray([], currentContext.path, true), [namespaceName], false),
+                children: [],
+                modifiers: modifiers,
+                comments: commentData,
+                location: {
+                    start: node.getStart(),
+                    end: node.getEnd(),
+                },
+                id: id,
+            };
+            // 进入命名空间作用域
+            contextStack.push(currentContext);
+            currentContext = {
+                parent: namespaceName,
+                path: __spreadArray(__spreadArray([], currentContext.path, true), [namespaceName], false),
+            };
+            if (node.body && ts.isModuleBlock(node.body)) {
+                ts.forEachChild(node.body, visitNode);
+            }
+            // 恢复上下文
+            currentContext = contextStack.pop();
+            CodeStructure.namespaces.push(namespaceInfo);
         }
         // 递归处理子节点
         try {
@@ -419,7 +447,7 @@ function parseFile(filePath) {
     measurePerformance("parseFile", function () {
         ts.forEachChild(sourceFile, visitNode);
     });
-    return resultGlobalScope;
+    return CodeStructure;
 }
 function cli() {
     var filePath = process.argv[2];

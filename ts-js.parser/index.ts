@@ -605,8 +605,8 @@ function cli() {
     }
 
     const result = parseFile(filePath);
-    fs.writeFileSync("ts-parser/tmp/analyzed.json", JSON.stringify(result, null, 2));
-    console.log("分析结果已保存到 ts-parser/tmp/analyzed.json");
+    fs.writeFileSync("tmp/analyzed.json", JSON.stringify(result, null, 2));
+    console.log("分析结果已保存到 tmp/analyzed.json");
 }
 
 if (require.main === module) cli();

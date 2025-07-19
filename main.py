@@ -12,6 +12,7 @@ def setup_logging():
 
 
 def main():
+    # 命令行初始化
     setup_logging()
     logger = logging.getLogger(__name__)
     parser = argparse.ArgumentParser(

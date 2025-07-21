@@ -15,21 +15,68 @@ type SubArrayOf<T extends any[]> = T extends [infer First, ...infer Rest] ? SubA
  * 新的AST逻辑（概念更新）：
  * 主体沿用原逻辑，但核心概念调整：
  *
- * 【声明结构】Declaration
- * export class name {
+ * 声明结构 Declaration 
+ * export class cls {
  * ^访问修饰 ^主词  ^符号    ⇤ 修饰符 ⇥
- *     @xx()                 ← 修饰器
- *       static public function* DO(p:t, ...q){ ⇤ functionBody ⇥
- *       ^访问修饰  ^修饰词  ^主词  ^符号
- *                 ↓ p.type
- *      参数结构：p:t,          ...q    ← 符号（q.type: any[]）
- *               ^符号p        ^修饰符
  *
- * 【函数体解析】functionBody：
- *       /** *\/               ← z.jsdoc
- *      declare const z = {}    ← z：符号 | {}：宾语
+ *    | declaration[classDeclaration]  >
+ *    |     accessModifier export
+ *    |     name cls
+ *    |     statements statement[]
+ *    |     elements Array<cls,enum,varible,method,funtion,...>
+ *    — — —
+ *    
+ *    
+ *       @some_rule
+ *       @will(n)  ← 修饰器    ↓修饰符  ↓符号index[type:T]
+ *       static public function*   DO  (index:T, ...args){ ⇤ 函数体
+ *       ^访问修饰  ^修饰词  ^主词    ^符号⇤    参数域     ⇥
+ *    cls.statements[1]
+ *    | declaration[functionDeclaration]  >
+ *    |     accessModifier ['static','public']
+ *    |     name DO
+ *    |     functionType ['generic']
+ *    |     params [
+ *    |             1 param >
+ *    |                 name "index"
+ *    |                 type T (a smybol also)
+ *    |     
+ *    |             2  param >
+ *    |                 name  "args"
+ *    |                 type any[] (ts infered)
+ *    |             ]decorators
+ *    |     decorators [
+ *    |             1  decorator(single) > name "some_rule"
+ *    |             2  decorator(call expression) >
+ *    |                    name will
+ *    |                    param x
+ *    |                ]
+ *    |     functionBody (or statements) [ ↓
+ *    ↓ *return & yelid case see down*
+ * 【函数体解析】functionBody↓：
+ *
+ *       /** *\/               ← z.jsdoc *functionBody[1]*
+ *      declare const obj,    ← z：符号name | {}：宾语(Object)
  *      ^访问修饰  ^主词&修饰词
+ *      number,  
+ *      {key, v} =
+ *      {}, 0, {"that":"is"}
  *
+ *    cls.statements[1].functionBody[2] (varible expression)
+ *    |    modifier ["declare","const"] //有些修饰词的语义是处于灰色部分的，难分，不如放一起
+ *    |    name ["obj",
+ *    |    content (expression)[
+ *    |             2  param >
+ *    |                 name  "args"
+ *    |                 type any[] (ts infered)
+ *    |             ]decorators
+ *    |     decorators [
+ *    |             1  decorator(single) > name "some_rule"
+ *    |             2  decorator(call expression) >
+ *    |                    name will
+ *    |                    param x
+ *    | 
+ *      
  *              ⇤          Statement        ⇥
  * 【表达式逻辑】z["a"]  ??=   ",,,,".split(",")
  *              ⇤主体⇥  ^谓词  ⇤    宾语     ⇥

@@ -15,6 +15,8 @@ type SubArrayOf<T extends any[]> = T extends [infer First, ...infer Rest] ? SubA
  * 新的AST逻辑（概念更新）：
  * 主体沿用原逻辑，但核心概念调整：
  *
+ * 注：以下只是部分示例，完全部分请见inetrfaces
+ *
  * 声明结构 Declaration 
  * export class cls {
  * ^访问修饰 ^主词  ^符号    ⇤ 修饰符 ⇥
@@ -53,34 +55,48 @@ type SubArrayOf<T extends any[]> = T extends [infer First, ...infer Rest] ? SubA
  *    |                ]
  *    |     functionBody (or statements) [ ↓
  *    ↓ *return & yelid case see down*
- * 【函数体解析】functionBody↓：
  *
  *       /** *\/               ← z.jsdoc *functionBody[1]*
- *      declare const obj,    ← z：符号name | {}：宾语(Object)
+ *      declare const obj,    ← z：符号obj | {}：宾语(Object)
  *      ^访问修饰  ^主词&修饰词
- *      number,  
+ *      numb,  
  *      {key, v} =
- *      {}, 0, {"that":"is"}
+ *      {}, 0, {a:"that",b:"is"}
  *
  *    cls.statements[1].functionBody[2] (varible expression)
  *    |    modifier ["declare","const"] //有些修饰词的语义是处于灰色部分的，难分，不如放一起
- *    |    name ["obj",
- *    |    content (expression)[
- *    |             2  param >
- *    |                 name  "args"
- *    |                 type any[] (ts infered)
- *    |             ]decorators
- *    |     decorators [
- *    |             1  decorator(single) > name "some_rule"
- *    |             2  decorator(call expression) >
- *    |                    name will
- *    |                    param x
+ *    |    objects (expressions)[ // 适应解构模式
+ *    |             1 object >
+ *    |                 name  obj
+ *    |                 value  {}
+ *    |                 type {} (ts infered)
+ *    |                 statement {name:`obj`,value:`{}`,type:never（因为没写）} 
  *    | 
- *      
+ *    |             2 object >
+ *    |                 name key
+ *    |                 value "that"
+ *    |                 type string (infered)
+ *    |                 statement {name:`{key,value}`,value:`{a:"that",b:"is"}`,type:never（因为没写）}
+ *    | 
+ *    |             3 object >
+ *    |                 name v
+ *    |                 value "is"
+ *    |                 type string (infered)
+ *    |                 statement {name:`{key,value}`,value:`{a:"that",b:"is"}`,type:never（因为没写）}
+ *    |                 
+ *    — — — —
+ *
+ *    *🚧有效文档这里停，以下内容在施工🚧*
+ *
+ * 【表达式逻辑】expressions     
  *              ⇤          Statement        ⇥
- * 【表达式逻辑】z["a"]  ??=   ",,,,".split(",")
+ *              z["a"]  ??=   ",,,,".split(",")
  *              ⇤主体⇥  ^谓词  ⇤    宾语     ⇥
- *                      ↓ 宾语
+ *                     ↓ 宾语
+ *    cls.statements[1].functionBody[3] (expression)
+ *    |    subject
+ *    |    objects (expressions)[ // 适应解构模式
+ *    |             1 
  *      xxfunction.call(z)     ← 谓词（双重括号结构）
  *      ⇤     主体     ⇥
  *

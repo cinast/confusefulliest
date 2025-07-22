@@ -122,12 +122,12 @@ type SubArrayOf<T extends any[]> = T extends [infer First, ...infer Rest] ? SubA
  *    cls.statements[1].functionBody[4] (if statement)
  *    |    if cases [
  *    |             1 if >
- *    |                 condition  Statement > ...
+ *    |                 condition  Expression
  *    |                 body  Statement[] >
  *    |                         1 returnStatement >
  *    |                                       Statement
  *    |             2 else-if >
- *    |                 condition  Statement > ...
+ *    |                 condition Expression
  *    |                 body  Statement[] >
  *    |                         1 yieldStatement >
  *    |                                       Statement
@@ -138,6 +138,17 @@ type SubArrayOf<T extends any[]> = T extends [infer First, ...infer Rest] ? SubA
  *    | return ...
  *  ————《转世重生之我要当ts之父》
  */
+
+/**
+ * @notice
+ * 约定俗成，
+ * 一些有child属性Declaration，其中的child是大纲，只列文字列表，展示其辖属元素
+ * interface们的属性按照语法顺序写
+ */
+/**
+ * 所有语法元素（非标准ast的）的平面id索引
+ */
+export let idMap: Map<string, BaseStatement> = new Map();
 
 /**
  * 魔改Typescript-ASt的抽象语法树
@@ -156,13 +167,11 @@ interface BaseStatement {
      * for index-ing & identity use
      */
     id: string;
-    parent?: string;
     path: string[];
     location: {
         start: number;
         end: number;
     };
-    comments?: CommentsInfo[];
 }
 
 // 沿用 Declaration和 Statement 两大分类
@@ -173,10 +182,71 @@ interface Declaration extends BaseStatement {
      */
     name?: string;
     /**
-     *
+     * @see as-same-sense-of-name
      */
     modifiers?: string[];
+    /**
+     * @see CommentsInfo
+     */
+    comments?: CommentsInfo[];
+    /** text of lines of decorators,
+     *  thats enough
+     */
+    definingModifier?: string[] | string;
+    accessModifier?: string[] | string;
 }
+
+interface VariableDeclaration extends Declaration {
+    // modifiers?: string[];
+    definingModifier: "const" | "let" | "var";
+    /**
+     * const [a,b] = [1,2];
+     */
+    Objects: Array<{
+        name: string;
+        type: string;
+        value: string;
+        valueScope?: "global" | "function" | "block";
+    }>;
+}
+
+interface FunctionDeclaration extends Declaration {
+    decorators?: string[];
+    // modifiers?: string[];
+    typeModifier?: "async" | "generic" | "async-generic";
+    // name?: string;
+    parameters: ParameterDeclaration[];
+    typeParameters?: string[];
+    returnType: string;
+    returnCases: Statement[];
+    yieldCases: Statement[];
+    thisScope: string;
+}
+
+interface ParameterDeclaration {
+    name: string;
+    type: string;
+    decorators?: string[];
+    modifiers: SubArrayOf<["...", "?"]>;
+}
+
+interface TypeAliasDeclaration extends Declaration {
+    modifiers?: string[];
+    typeName: string;
+    typeParameters?: string[];
+    typeValue: Expression;
+}
+
+interface InterfaceDeclaration extends Declaration {
+    properties: PropertyDeclaration[];
+    modifiers: string[];
+}
+
+interface EnumDeclaration extends Declaration {
+    modifiers?: string[];
+    members: string[];
+}
+
 /**
  * 因为内部下一级结构简单，采用大纲式解析
  */
@@ -197,23 +267,20 @@ interface ClassDeclaration extends Declaration {
     prototype: { constructor: string; __proto__?: string };
 }
 
-interface InterfaceDeclaration extends Declaration {
-    properties: PropertyDeclaration[];
-    modifiers: string[];
-}
-
-interface TypeAliasDeclaration extends Declaration {
+interface PropertyDeclaration extends Declaration {
     type: string;
-    typeParameters?: string[];
-    modifiers: string[];
+    decorators?: string[];
+    accessModifier?: SubArrayOf<["public", "private", "protected", "readonly", "static"]>;
+    definingModifier: SubArrayOf<["declare", "static", "abstract", "accessor"]>;
 }
 
-interface EnumDeclaration extends Declaration {
-    members: string[];
-    modifiers: string[];
+interface MethodDeclaration extends FunctionDeclaration {
+    accessModifier?: SubArrayOf<["public", "private", "protected", "readonly", "static"]>;
+    definingModifier: SubArrayOf<["static", "abstract", "get", "set", "constructor"]>;
 }
 
 interface NamespaceDeclaration extends Declaration {
+    modifiers: string[];
     children: Array<
         | ClassDeclaration
         | InterfaceDeclaration
@@ -222,44 +289,62 @@ interface NamespaceDeclaration extends Declaration {
         | FunctionDeclaration
         | VariableDeclaration
     >;
-    modifiers: string[];
+    statements: Statement[];
 }
 
-interface FunctionDeclaration extends Declaration {
-    typeModifier?: "async" | "generic" | "async-generic";
-    parameters: ParameterDeclaration[];
-    returnType: string;
-    typeParameters?: string[];
-    decorators?: string[];
-}
-
-interface MethodDeclaration extends FunctionDeclaration {
-    accessModifier?: SubArrayOf<["public", "private", "protected", "readonly", "static"]>;
-    definingModifier: SubArrayOf<["static", "abstract", "get", "set", "constructor"]>;
-}
-
-interface VariableDeclaration extends Declaration {
+interface Statement extends BaseStatement {
     type: string;
-    definingModifier: "const" | "let" | "var";
-    modifiers: string[];
-    valueScope?: "global" | "function" | "block";
 }
 
-interface PropertyDeclaration extends Declaration {
-    type: string;
-    decorators?: string[];
-    accessModifier?: SubArrayOf<["public", "private", "protected", "readonly", "static"]>;
-    definingModifier: SubArrayOf<["declare", "static", "abstract", "accessor"]>;
+/**
+ * single statement lead by `if()`
+ */
+interface IfStatement extends Statement {
+    type: "IfStatement";
+    /**
+     * 1 if()
+     * 2 else if
+     * n else or else if
+     */
+    Chain: Array<{
+        index: number;
+        /**
+         * only when it is else case,
+         * there haven't the condition property
+         */
+        condition?: Expression;
+        body: Statement[];
+    }>;
+}
+interface switchStatement extends Statement {
+    type: "switchStatement";
+    switch: Expression;
+    cases: Array<{
+        index: number;
+        match: Expression;
+        body: Statement[];
+    }>;
 }
 
-interface ParameterDeclaration {
-    name: string;
-    type: string;
-    decorators?: string[];
-    modifiers: string[];
+interface tryStatement extends Statement {
+    type: "tryStatement";
+    try: Statement[];
+    /**
+     * catch(e)
+     * ------^
+     */
+    catches: string;
+    /**
+     * catch(e){...
+     * ----------^
+     */
+    catch: Statement[];
+    finally: Statement[];
 }
 
-interface StatementInfo extends BaseStatement {}
+interface Expression extends BaseStatement {}
+
+interface devTokens extends BaseStatement {}
 
 interface CommentsInfo extends Omit<BaseStatement, "comments"> {
     /**

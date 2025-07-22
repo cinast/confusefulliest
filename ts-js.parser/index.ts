@@ -32,6 +32,7 @@ type SubArrayOf<T extends any[]> = T extends [infer First, ...infer Rest] ? SubA
  *    |     name cls
  *    |     statements statement[]
  *    |     elements ... (Array<cls,enum,variable,method,function,...>)
+ *    |     prototype: { constructor: string; __proto__?: string };
  *    — — —
  *
  *
@@ -143,21 +144,14 @@ type SubArrayOf<T extends any[]> = T extends [infer First, ...infer Rest] ? SubA
  * 但是考虑的不用像原版那么多
  * @see index.ts :14-126
  */
-export interface CodeStructure {
-    imports: string[];
-    classes: ClassInfo[];
-    interfaces: InterfaceInfo[];
-    types: TypeAliasInfo[];
-    enums: EnumInfo[];
-    functions: FunctionInfo[];
-    variables: VariableInfo[];
-    namespaces: NamespaceInfo[];
+export interface SourceFile {
+    statements: BaseStatement[];
 }
 
 /**
  * 基本语句类型所必需的
  */
-interface BaseStatementInfo {
+interface BaseStatement {
     /**
      * for index-ing & identity use
      */
@@ -172,15 +166,7 @@ interface BaseStatementInfo {
 }
 
 // 沿用 Declaration和 Statement 两大分类
-
-/**
- * 某种意义上来说 Declaration 也确实是 Statement
- * 在typescript-AST 里也确实有 `SourceFile.statements[x]: xxStatement` 这种写法
- * 但是Statement这个东西概念太泛了，甚至说Statement包含了全部你能手写的东西（本来就是
- * 不过对于定义类型的语句，应该是可以有更单的逻辑解析
- * 像class、object；完全大纲式的用法
- */
-interface DeclarationInfo extends BaseStatementInfo {
+interface Declaration extends BaseStatement {
     /**
      * Declaration which declared with anonymity such as `()=>{}` will not have the property
      * Like original AST dose
@@ -194,74 +180,88 @@ interface DeclarationInfo extends BaseStatementInfo {
 /**
  * 因为内部下一级结构简单，采用大纲式解析
  */
-interface ClassInfo extends DeclarationInfo {
-    methods: MethodInfo[];
-    properties: PropertyInfo[];
-    children: Array<ClassInfo | InterfaceInfo | TypeAliasInfo | EnumInfo | FunctionInfo | VariableInfo>;
+interface ClassDeclaration extends Declaration {
+    methods: MethodDeclaration[];
+    properties: PropertyDeclaration[];
+    children: Array<
+        | ClassDeclaration
+        | InterfaceDeclaration
+        | TypeAliasDeclaration
+        | EnumDeclaration
+        | FunctionDeclaration
+        | VariableDeclaration
+    >;
     extends?: string;
     implements: string[];
     modifiers: string[];
     prototype: { constructor: string; __proto__?: string };
 }
 
-interface InterfaceInfo extends DeclarationInfo {
-    properties: PropertyInfo[];
+interface InterfaceDeclaration extends Declaration {
+    properties: PropertyDeclaration[];
     modifiers: string[];
 }
 
-interface TypeAliasInfo extends DeclarationInfo {
+interface TypeAliasDeclaration extends Declaration {
     type: string;
     typeParameters?: string[];
     modifiers: string[];
 }
 
-interface EnumInfo extends DeclarationInfo {
+interface EnumDeclaration extends Declaration {
     members: string[];
     modifiers: string[];
 }
 
-interface NamespaceInfo extends DeclarationInfo {
-    children: Array<ClassInfo | InterfaceInfo | TypeAliasInfo | EnumInfo | FunctionInfo | VariableInfo>;
+interface NamespaceDeclaration extends Declaration {
+    children: Array<
+        | ClassDeclaration
+        | InterfaceDeclaration
+        | TypeAliasDeclaration
+        | EnumDeclaration
+        | FunctionDeclaration
+        | VariableDeclaration
+    >;
     modifiers: string[];
 }
 
-interface FunctionInfo extends DeclarationInfo {
-    modifiers: string[];
-    parameters: ParameterInfo[];
+interface FunctionDeclaration extends Declaration {
+    typeModifier?: "async" | "generic" | "async-generic";
+    parameters: ParameterDeclaration[];
     returnType: string;
     typeParameters?: string[];
     decorators?: string[];
 }
 
-interface MethodInfo extends FunctionInfo {
+interface MethodDeclaration extends FunctionDeclaration {
     accessModifier?: SubArrayOf<["public", "private", "protected", "readonly", "static"]>;
     definingModifier: SubArrayOf<["static", "abstract", "get", "set", "constructor"]>;
 }
 
-interface VariableInfo extends DeclarationInfo {
+interface VariableDeclaration extends Declaration {
     type: string;
     definingModifier: "const" | "let" | "var";
     modifiers: string[];
     valueScope?: "global" | "function" | "block";
 }
 
-interface PropertyInfo extends DeclarationInfo {
+interface PropertyDeclaration extends Declaration {
     type: string;
     decorators?: string[];
     accessModifier?: SubArrayOf<["public", "private", "protected", "readonly", "static"]>;
     definingModifier: SubArrayOf<["declare", "static", "abstract", "accessor"]>;
 }
 
-interface ParameterInfo {
+interface ParameterDeclaration {
     name: string;
     type: string;
     decorators?: string[];
     modifiers: string[];
 }
 
-interface CodeFlowStatementInfo extends BaseStatementInfo {}
+interface StatementInfo extends BaseStatement {}
 
-interface CommentsInfo extends Omit<BaseStatementInfo, "comments"> {
+interface CommentsInfo extends Omit<BaseStatement, "comments"> {
     /**
      * normal `//` `/*`
      * jsDoc `/**`
@@ -313,7 +313,7 @@ function getDebuggers() {
             }
         },
 
-        dumpStructure: (structure: CodeStructure) => {
+        dumpStructure: (structure: SourceFile) => {
             console.log(JSON.stringify(structure, null, 2));
         },
 
@@ -396,7 +396,7 @@ function getModifiers(node: ts.Node): string[] {
 //     return decorators?.map((d) => d.getText());
 // }
 
-function parseFile(filePath: string): CodeStructure {
+function parseFile(filePath: string): SourceFile {
     //     if (!fs.existsSync(filePath)) {
     //         console.error(`文件不存在: ${filePath}`);
     //         process.exit(1);

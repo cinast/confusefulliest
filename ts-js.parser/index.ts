@@ -24,15 +24,14 @@ type SubArrayOf<T extends any[]> = T extends [infer First, ...infer Rest] ? SubA
  * 可以化简语法树末端
  *
  * 注：以下只是部分示例，完全部分请见interfaces
- *
- * export class cls {
- * ^访问修饰 ^主词  ^符号    ⇤ 修饰符 ⇥
+ * export  class  cls {
+ * ^访问修饰 ^主词  ^符号
  *
  *    | declaration[classDeclaration]  >
- *    |     accessModifier export
+ *    |     accessModifier ["export"]
  *    |     name cls
  *    |     statements statement[]
- *    |     elements Array<cls,enum,variable,method,function,...>
+ *    |     elements ... (Array<cls,enum,variable,method,function,...>)
  *    — — —
  *
  *
@@ -40,8 +39,7 @@ type SubArrayOf<T extends any[]> = T extends [infer First, ...infer Rest] ? SubA
  *       @will(n)  ← 修饰器    ↓修饰符  ↓符号index[type:T]
  *       static public function*   DO  (index:T, ...args){ ⇤ 函数体
  *       ^访问修饰  ^修饰词  ^主词    ^符号⇤    参数域     ⇥
- *    cls.statements[1]
- *    | declaration[functionDeclaration]  >
+ *    cls.statements[1] (functionDeclaration)
  *    |     accessModifier ['static','public']
  *    |     name DO
  *    |     functionType ['generic']
@@ -53,7 +51,7 @@ type SubArrayOf<T extends any[]> = T extends [infer First, ...infer Rest] ? SubA
  *    |             2  param >
  *    |                 name  "args"
  *    |                 type any[] (ts inferred)
- *    |             ]decorators
+ *    |             ]
  *    |     decorators [
  *    |             1  decorator(single) > name "some_rule"
  *    |             2  decorator(call expression) >
@@ -63,7 +61,7 @@ type SubArrayOf<T extends any[]> = T extends [infer First, ...infer Rest] ? SubA
  *    |     functionBody (or statements) [ ↓
  *    ↓ *return & yield case see down*
  *
- *       /** *\/               ← z.jsdoc *functionBody[1]*
+ *       /** *\/               ← z.jsdoc **cls.statements[1].functionBody[1]**
  *      declare const obj,    ← z：符号obj | {}：宾语(Object)
  *      ^访问修饰  ^主词&修饰词
  *      numb,
@@ -93,6 +91,23 @@ type SubArrayOf<T extends any[]> = T extends [infer First, ...infer Rest] ? SubA
  *    |
  *    — — — —
  *
+ *    type Y<@dec<> a,b = Number> = a + b
+ *
+ *    cls.statements[1].functionBody[3] (TypeAlias Declaration)
+ *    |    name Y
+ *    |    param [
+ *    |         1 a >
+ *    |             name a
+ *    |             type any (ts inferred)
+ *    |             decorator [`@dec<>`]
+ *    |         2 b >
+ *    |             name b
+ *    |             type any (ts inferred)
+ *    |             default `Int`
+ *    |         ]
+ *    |    value `a + b`
+ *    — — — —
+ *
  *            ↓ if_case[1].condition
  *     ⤒   if (approached) { if_case[1].condition                              ——
  *     |      return "YES" ← DO.returnCase[1]                                  ⇕ if_case[2]
@@ -103,7 +118,7 @@ type SubArrayOf<T extends any[]> = T extends [infer First, ...infer Rest] ? SubA
  *
  *         return ... ← DO.returnCase[2]
  *
- *    cls.statements[1].functionBody[3] (if statement)
+ *    cls.statements[1].functionBody[4] (if statement)
  *    |    if cases [
  *    |             1 if >
  *    |                 condition  Statement > ...
@@ -118,13 +133,13 @@ type SubArrayOf<T extends any[]> = T extends [infer First, ...infer Rest] ? SubA
  *    |             ]
  *    — — — —
  *
- *    cls.statements[1].functionBody[4] (returnStatement)
+ *    cls.statements[1].functionBody[5] (returnStatement)
  *    | return ...
  *  ————《转世重生之我要当ts之父》
  */
 
 /**
- * 仿Typescript-ASt的抽象语法树
+ * 魔改Typescript-ASt的抽象语法树
  * 但是考虑的不用像原版那么多
  * @see index.ts :14-126
  */

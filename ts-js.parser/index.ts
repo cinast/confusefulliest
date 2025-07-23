@@ -8,12 +8,23 @@ import { randomUUID } from "crypto";
 const JSFileType = ["js"];
 const TSFileType = ["ts"];
 
-// 数组子集
+/** 数组子集 */
 type SubArrayOf<T extends any[]> = T extends [infer First, ...infer Rest] ? SubArrayOf<Rest> | [First, ...SubArrayOf<Rest>] : [];
+/**  数组非空子集 */
+type NonEmptySubArrayOf<T extends any[]> = Exclude<SubArrayOf<T>, []>;
+/**
+ * 我希望有一天能用<...args extends any[][]>
+ */
+type ItemIn<T extends any[]> = T[number];
+
+type OverRide<T, K extends keyof T, V> = Omit<T, K> & { [P in K]: V };
+type MakeAny<T, K extends keyof T, partially = false> = Omit<T, K> & partially extends false
+    ? { [P in K]: any }
+    : { [P in K]?: any };
 
 /**
  * 新的AST逻辑（概念更新）：
- * 大部分沿用原逻辑，只针对需求优化了含有关键字的部分，还有少量涉及
+ * 大部分沿用原逻辑，e只针对需求优化了含有关键字的部分，还有少量涉及
  * 如逻辑流（if-elif-else、try-catch-finally、switch-case-default、for、(do)-while等等等）
  * 及其辅助控制逻辑流的continue、break等
  * 如定义（实值/类型，含匿名）（var/let/const、class、function、interface、type）
@@ -27,7 +38,7 @@ type SubArrayOf<T extends any[]> = T extends [infer First, ...infer Rest] ? SubA
  * export  class  cls {
  * ^访问修饰 ^主词  ^符号
  *
- *    | declaration[classDeclaration]  >
+ *    declaration[classDeclaration]  >
  *    |     accessModifier ["export"]
  *    |     name cls
  *    |     statements statement[]
@@ -40,7 +51,7 @@ type SubArrayOf<T extends any[]> = T extends [infer First, ...infer Rest] ? SubA
  *       @will(n)  ← 修饰器    ↓修饰符  ↓符号index[type:T]
  *       static public function*   DO  (index:T, ...args){ ⇤ 函数体
  *       ^访问修饰  ^修饰词  ^主词    ^符号⇤    参数域     ⇥
- *    cls.statements[1] (functionDeclaration)
+ *    cls.statements[1] (functionDeclaration)  >
  *    |     accessModifier ['static','public']
  *    |     name DO
  *    |     functionType ['generic']
@@ -69,7 +80,7 @@ type SubArrayOf<T extends any[]> = T extends [infer First, ...infer Rest] ? SubA
  *      {key, v} =
  *      {}, 0, {a:"that",b:"is"}
  *
- *    cls.statements[1].functionBody[2] (variable expression)
+ *    cls.statements[1].functionBody[2] (variable expression)  >
  *    |    modifier ["declare","const"] //有些修饰词的语义是处于灰色部分的，难分，不如放一起
  *    |    objects (expressions)[ // 适应解构模式
  *    |             1 object >
@@ -94,7 +105,7 @@ type SubArrayOf<T extends any[]> = T extends [infer First, ...infer Rest] ? SubA
  *
  *    type Y<@dec<> a,b = Number> = a + b
  *
- *    cls.statements[1].functionBody[3] (TypeAlias Declaration)
+ *    cls.statements[1].functionBody[3] (TypeAlias Declaration)  >
  *    |    name Y
  *    |    param [
  *    |         1 a >
@@ -119,7 +130,7 @@ type SubArrayOf<T extends any[]> = T extends [infer First, ...infer Rest] ? SubA
  *
  *         return ... ← DO.returnCase[2]
  *
- *    cls.statements[1].functionBody[4] (if statement)
+ *    cls.statements[1].functionBody[4] (if statement)  >
  *    |    if cases [
  *    |             1 if >
  *    |                 condition  Expression
@@ -142,7 +153,7 @@ type SubArrayOf<T extends any[]> = T extends [infer First, ...infer Rest] ? SubA
 /**
  * @notice
  * 约定俗成，
- * 一些有child属性Declaration，其中的child是大纲，只列文字列表，展示其辖属元素
+ * 一些有child（element）属性Declaration，其中的child是大纲，只列文字列表，展示其辖属元素
  * interface们的属性按照语法顺序写
  */
 /**
@@ -160,11 +171,12 @@ export interface SourceFile {
 }
 
 /**
- * 基本语句类型所必需的
+ * 基本语句类型所必需的基础信息
  */
 interface BaseStatement {
     /**
      * for index-ing & identity use
+     * @see idMap
      */
     id: string;
     path: string[];
@@ -182,68 +194,95 @@ interface Declaration extends BaseStatement {
      */
     name?: string;
     /**
-     * @see as-same-sense-of-name
-     */
-    modifiers?: string[];
-    /**
      * @see CommentsInfo
      */
     comments?: CommentsInfo[];
     /** text of lines of decorators,
      *  thats enough
      */
-    definingModifier?: string[] | string;
-    accessModifier?: string[] | string;
 }
 
 interface VariableDeclaration extends Declaration {
-    // modifiers?: string[];
+    accessModifier?: NonEmptySubArrayOf<["declare", "export"]>;
     definingModifier: "const" | "let" | "var";
     /**
-     * const [a,b] = [1,2];
+     * const [a,b],{c} = [1,2],{id:"00",v:"oh"};
      */
-    Objects: Array<{
+    objects: Array<{
         name: string;
-        type: string;
+        type?: string;
+        typeInferred: string;
         value: string;
-        valueScope?: "global" | "function" | "block";
     }>;
+    valueScope: string;
 }
 
 interface FunctionDeclaration extends Declaration {
     decorators?: string[];
-    // modifiers?: string[];
+    accessModifier?: NonEmptySubArrayOf<["declare", "export"]>;
     typeModifier?: "async" | "generic" | "async-generic";
     // name?: string;
-    parameters: ParameterDeclaration[];
-    typeParameters?: string[];
-    returnType: string;
-    returnCases: Statement[];
-    yieldCases: Statement[];
-    thisScope: string;
+    parameters?: SingleParameterDeclaration[];
+    typeParameters?: SingleTypeParameterDeclaration[];
+    returnType?: string;
+    returnTypeInferred: string;
+    returnCases?: Statement[];
+    yieldCases?: Statement[];
+    functionBody: Statement[];
+    thisScope?: string;
+    prototype: {
+        constructor?: string;
+        __proto__?: string;
+    };
+    overloads?: string[];
 }
 
-interface ParameterDeclaration {
-    name: string;
-    type: string;
+interface SingleParameterDeclaration extends Declaration {
     decorators?: string[];
-    modifiers: SubArrayOf<["...", "?"]>;
+    // name: string;
+    type?: string;
+    typeInferred: string;
+    modifiers?: NonEmptySubArrayOf<["readonly", ItemIn<["?", "="]>]> | ["..."];
+    default?: string;
 }
 
+interface TypeFunctionDeclaration extends Declaration {
+    decorators: never;
+    accessModifier?: NonEmptySubArrayOf<["declare", "export"]>;
+    // name?: string;
+    typeParameters: SingleTypeParameterDeclaration[];
+    returnType: string;
+    returnTypeInferred: string;
+    overloads?: string[];
+}
+
+interface SingleTypeParameterDeclaration extends Declaration {
+    decorators: never;
+    modifiers?: NonEmptySubArrayOf<["="]>;
+    // name: string;
+    typeExtends?: string;
+    typeTypeInferred: string;
+    default?: string;
+}
+
+/**
+ *         ↓keyword ↓typeParameters
+ * export type T   <a> = Record<str,a> ←typeValue
+ * ^modifier   ^typeName
+ */
 interface TypeAliasDeclaration extends Declaration {
-    modifiers?: string[];
+    accessModifier?: NonEmptySubArrayOf<["declare", "export"]>;
     typeName: string;
-    typeParameters?: string[];
-    typeValue: Expression;
+    typeValue: string;
 }
 
 interface InterfaceDeclaration extends Declaration {
+    accessModifier?: NonEmptySubArrayOf<["declare", "export"]>;
     properties: PropertyDeclaration[];
-    modifiers: string[];
 }
 
 interface EnumDeclaration extends Declaration {
-    modifiers?: string[];
+    accessModifier?: NonEmptySubArrayOf<["declare", "export"]>;
     members: string[];
 }
 
@@ -251,6 +290,10 @@ interface EnumDeclaration extends Declaration {
  * 因为内部下一级结构简单，采用大纲式解析
  */
 interface ClassDeclaration extends Declaration {
+    accessModifier?: NonEmptySubArrayOf<["declare", "export"]>;
+    definingModifier: NonEmptySubArrayOf<["abstract"]>;
+    extends?: string;
+    implements: string[];
     methods: MethodDeclaration[];
     properties: PropertyDeclaration[];
     children: Array<
@@ -258,35 +301,41 @@ interface ClassDeclaration extends Declaration {
         | InterfaceDeclaration
         | TypeAliasDeclaration
         | EnumDeclaration
-        | FunctionDeclaration
+        | TypeFunctionDeclaration
         | VariableDeclaration
     >;
-    extends?: string;
-    implements: string[];
-    modifiers: string[];
     prototype: { constructor: string; __proto__?: string };
 }
 
+// accessModifier 是有关于这个属性或者方法如何被外部使用的关键字集合
+// definingModifier 则是关于这个属性或者方法它的性质的关键字
+// static 我觉得他是决定属性在类对象还是实例对象上的关键字，我列入了 accessModifier
+// declare 他只是说别的文件能不能直接引用这个属性/对象，并没有改变这个属性/对象是怎么样的，我列入了 accessModifier
+// accessor 。。。难绷
+
 interface PropertyDeclaration extends Declaration {
-    type: string;
     decorators?: string[];
-    accessModifier?: SubArrayOf<["public", "private", "protected", "readonly", "static"]>;
-    definingModifier: SubArrayOf<["declare", "static", "abstract", "accessor"]>;
+    accessModifier?: NonEmptySubArrayOf<["declare", "override", "public", "private", "protected", "readonly", "static"]>;
+    // definingModifier?: NonEmptySubArrayOf<["accessor"]>;
+    // name
+    type?: string;
+    typeInferred: string;
+    value: string;
 }
 
-interface MethodDeclaration extends FunctionDeclaration {
-    accessModifier?: SubArrayOf<["public", "private", "protected", "readonly", "static"]>;
-    definingModifier: SubArrayOf<["static", "abstract", "get", "set", "constructor"]>;
+interface MethodDeclaration extends MakeAny<FunctionDeclaration, "accessModifier", true> {
+    accessModifier?: NonEmptySubArrayOf<["declare", "override", "public", "private", "protected", "static"]>;
+    definingModifier: NonEmptySubArrayOf<["get", "set", "constructor"]>;
 }
 
 interface NamespaceDeclaration extends Declaration {
-    modifiers: string[];
+    accessModifier?: NonEmptySubArrayOf<["declare", "export"]>;
     children: Array<
         | ClassDeclaration
         | InterfaceDeclaration
         | TypeAliasDeclaration
         | EnumDeclaration
-        | FunctionDeclaration
+        | TypeFunctionDeclaration
         | VariableDeclaration
     >;
     statements: Statement[];
@@ -297,7 +346,9 @@ interface Statement extends BaseStatement {
 }
 
 /**
- * single statement lead by `if()`
+ * single statement lead by `if()` \
+ * processing `if`statement and `else` or `else if` nextly as a `if`chain \
+ * easier processing logic
  */
 interface IfStatement extends Statement {
     type: "IfStatement";
@@ -316,6 +367,11 @@ interface IfStatement extends Statement {
         body: Statement[];
     }>;
 }
+
+/**
+ * @see-also IfStatement
+ * similar logic, but diff properties
+ */
 interface switchStatement extends Statement {
     type: "switchStatement";
     switch: Expression;
@@ -326,6 +382,9 @@ interface switchStatement extends Statement {
     }>;
 }
 
+/**
+ * @notice `catches` is the `e` of `catch(e)`
+ */
 interface tryStatement extends Statement {
     type: "tryStatement";
     try: Statement[];
@@ -340,6 +399,88 @@ interface tryStatement extends Statement {
      */
     catch: Statement[];
     finally: Statement[];
+}
+
+interface BreakStatement extends Statement {
+    type: "BreakStatement";
+    label?: string;
+}
+
+interface ContinueStatement extends Statement {
+    type: "ContinueStatement";
+    label?: string;
+}
+
+interface DebuggerStatement extends Statement {
+    type: "DebuggerStatement";
+}
+
+interface DeleteExpression extends Expression {
+    type: "DeleteExpression";
+    expression: Expression;
+}
+
+interface DoWhileStatement extends Statement {
+    type: "DoWhileStatement";
+    body: Statement[];
+    condition: Expression;
+}
+
+interface WhileStatement extends Statement {
+    type: "WhileStatement";
+    condition: Expression;
+    body: Statement[];
+}
+
+interface ForStatement extends Statement {
+    type: "ForStatement";
+    initializer?: Statement | Expression;
+    condition?: Expression;
+    incrementor?: Expression;
+    body: Statement[];
+}
+
+interface ForInStatement extends Statement {
+    type: "ForInStatement";
+    initializer: Statement | Expression;
+    expression: Expression;
+    body: Statement[];
+}
+
+interface ForOfStatement extends Statement {
+    type: "ForOfStatement";
+    initializer: Statement | Expression;
+    expression: Expression;
+    body: Statement[];
+}
+
+interface WithStatement extends Statement {
+    type: "WithStatement";
+    expression: Expression;
+    body: Statement[];
+}
+
+interface YieldExpression extends Expression {
+    type: "YieldExpression";
+    expression?: Expression;
+    delegate?: boolean;
+}
+
+interface AwaitExpression extends Expression {
+    type: "AwaitExpression";
+    expression: Expression;
+}
+
+interface ModuleDeclaration extends Declaration {
+    type: "ModuleDeclaration";
+    name: string;
+    body: Statement[];
+}
+
+interface UsingStatement extends Statement {
+    type: "UsingStatement";
+    declarations: VariableDeclaration[];
+    body: Statement[];
 }
 
 interface Expression extends BaseStatement {}
@@ -481,6 +622,7 @@ function getModifiers(node: ts.Node): string[] {
 //     return decorators?.map((d) => d.getText());
 // }
 
+///@ts-ignore
 function parseFile(filePath: string): SourceFile {
     //     if (!fs.existsSync(filePath)) {
     //         console.error(`文件不存在: ${filePath}`);

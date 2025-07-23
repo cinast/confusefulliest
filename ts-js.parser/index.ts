@@ -173,13 +173,13 @@ export interface SourceFile {
 /**
  * 基本语句类型所必需的基础信息
  */
+/** 基础语句类型必需的信息 */
 interface BaseStatement {
-    /**
-     * for index-ing & identity use
-     * @see idMap
-     */
+    /** 唯一标识符 */
     id: string;
+    /** 路径信息 */
     path: string[];
+    /** 代码位置 */
     location: {
         start: number;
         end: number;
@@ -187,91 +187,115 @@ interface BaseStatement {
 }
 
 // 沿用 Declaration和 Statement 两大分类
+/** 声明类型的基础接口 */
 interface Declaration extends BaseStatement {
-    /**
-     * Declaration which declared with anonymity such as `()=>{}` will not have the property
-     * Like original AST dose
-     */
+    /** 声明名称 */
     name?: string;
-    /**
-     * @see CommentsInfo
-     */
+    /** 注释信息 */
     comments?: CommentsInfo[];
-
-    // 访问控制修饰符 (单选)
+    /** 访问控制修饰符 */
     accessControl?: "public" | "private" | "protected";
-
-    // 定义行为修饰符 (多选)
+    /** 定义行为修饰符 */
     behaviors?: NonEmptySubArrayOf<["static", "abstract", "readonly"]>;
-
-    // 特殊标记
-    isAmbient?: boolean; // 替代declare修饰符
-    isOverride?: boolean; // 覆盖标记
-
-    /** text of lines of decorators */
+    /** 是否为环境声明 */
+    isAmbient?: boolean;
+    /** 是否为覆盖声明 */
+    isOverride?: boolean;
+    /** 装饰器文本 */
     decorators?: string[];
 }
 
+/** 变量声明接口 */
 interface VariableDeclaration extends Declaration {
+    /** 访问修饰符 */
     accessModifier?: NonEmptySubArrayOf<["declare", "export"]>;
+    /** 定义修饰符 */
     definingModifier: "const" | "let" | "var";
-    /**
-     * const [a,b],{c} = [1,2],{id:"00",v:"oh"};
-     */
+    /** 变量对象 */
     objects: Array<{
         name: string;
         type?: string;
         typeInferred: string;
         value: string;
     }>;
+    /** 值作用域 */
     valueScope: string;
 }
 
+/** 函数声明接口 */
 interface FunctionDeclaration extends Declaration {
+    /** 装饰器 */
     decorators?: string[];
+    /** 访问修饰符 */
     accessModifier?: NonEmptySubArrayOf<["declare", "export"]>;
+    /** 类型修饰符 */
     typeModifier?: "async" | "generic" | "async-generic";
-    // name?: string;
+    /** 参数列表 */
     parameters?: SingleParameterDeclaration[];
+    /** 类型参数列表 */
     typeParameters?: SingleTypeParameterDeclaration[];
+    /** 返回类型 */
     returnType?: string;
+    /** 推断的返回类型 */
     returnTypeInferred: string;
+    /** return语句 */
     returnCases?: Statement[];
+    /** yield语句 */
     yieldCases?: Statement[];
+    /** 函数体 */
     functionBody: Statement[];
+    /** this作用域 */
     thisScope?: string;
+    /** 原型信息 */
     prototype: {
         constructor?: string;
         __proto__?: string;
     };
+    /** 重载列表 */
     overloads?: string[];
 }
 
+/** 单个参数声明接口 */
 interface SingleParameterDeclaration extends Declaration {
+    /** 装饰器 */
     decorators?: string[];
-    // name: string;
+    /** 参数类型 */
     type?: string;
+    /** 推断的类型 */
     typeInferred: string;
+    /** 修饰符 */
     modifiers?: NonEmptySubArrayOf<["readonly", ItemIn<["?", "="]>]> | ["..."];
+    /** 默认值 */
     default?: string;
 }
 
+/** 类型函数声明接口 */
 interface TypeFunctionDeclaration extends Declaration {
+    /** 无装饰器 */
     decorators: never;
+    /** 访问修饰符 */
     accessModifier?: NonEmptySubArrayOf<["declare", "export"]>;
-    // name?: string;
+    /** 类型参数列表 */
     typeParameters: SingleTypeParameterDeclaration[];
+    /** 返回类型 */
     returnType: string;
+    /** 推断的返回类型 */
     returnTypeInferred: string;
+    /** 重载列表 */
     overloads?: string[];
 }
 
+/** 单个类型参数声明接口 */
 interface SingleTypeParameterDeclaration extends Declaration {
+    /** 无装饰器 */
     decorators: never;
+    /** 修饰符 */
     modifiers?: NonEmptySubArrayOf<["="]>;
-    // name: string;
+    /** 类型扩展 */
     typeExtends?: string;
+    /** 推断的类型 */
     typeTypeInferred: string;
+    /** 默认类型 */
     default?: string;
 }
 
@@ -280,32 +304,50 @@ interface SingleTypeParameterDeclaration extends Declaration {
  * export type T   <a> = Record<str,a> ←typeValue
  * ^modifier   ^typeName
  */
+/** 类型别名声明接口 */
 interface TypeAliasDeclaration extends Declaration {
+    /** 访问修饰符 */
     accessModifier?: NonEmptySubArrayOf<["declare", "export"]>;
+    /** 类型名称 */
     typeName: string;
+    /** 类型值 */
     typeValue: string;
 }
 
+/** 接口声明接口 */
 interface InterfaceDeclaration extends Declaration {
+    /** 访问修饰符 */
     accessModifier?: NonEmptySubArrayOf<["declare", "export"]>;
+    /** 属性列表 */
     properties: PropertyDeclaration[];
 }
 
+/** 枚举声明接口 */
 interface EnumDeclaration extends Declaration {
+    /** 访问修饰符 */
     accessModifier?: NonEmptySubArrayOf<["declare", "export"]>;
+    /** 成员列表 */
     members: string[];
 }
 
 /**
  * 因为内部下一级结构简单，采用大纲式解析
  */
+/** 类声明接口 */
 interface ClassDeclaration extends Declaration {
+    /** 访问修饰符 */
     accessModifier?: NonEmptySubArrayOf<["declare", "export"]>;
+    /** 定义修饰符 */
     definingModifier: NonEmptySubArrayOf<["abstract"]>;
+    /** 继承的类 */
     extends?: string;
+    /** 实现的接口 */
     implements: string[];
+    /** 方法列表 */
     methods: MethodDeclaration[];
+    /** 属性列表 */
     properties: PropertyDeclaration[];
+    /** 子元素列表 */
     children: Array<
         | ClassDeclaration
         | InterfaceDeclaration
@@ -314,6 +356,7 @@ interface ClassDeclaration extends Declaration {
         | TypeFunctionDeclaration
         | VariableDeclaration
     >;
+    /** 原型信息 */
     prototype: { constructor: string; __proto__?: string };
 }
 
@@ -323,23 +366,33 @@ interface ClassDeclaration extends Declaration {
 // declare 他只是说别的文件能不能直接引用这个属性/对象，并没有改变这个属性/对象是怎么样的，我列入了 accessModifier
 // accessor 。。。难绷
 
+/** 属性声明接口 */
 interface PropertyDeclaration extends Declaration {
+    /** 装饰器 */
     decorators?: string[];
-    // 定义行为修饰符 (多选)
+    /** 定义修饰符 */
     definingModifier?: Array<"accessor" | "get" | "set">;
-    // name
+    /** 属性类型 */
     type?: string;
+    /** 推断的类型 */
     typeInferred: string;
+    /** 属性值 */
     value: string;
 }
 
+/** 方法声明接口 */
 interface MethodDeclaration extends MakeAny<FunctionDeclaration, "accessModifier", true> {
+    /** 访问修饰符 */
     accessModifier?: NonEmptySubArrayOf<["declare", "override", "public", "private", "protected", "static"]>;
+    /** 定义修饰符 */
     definingModifier: NonEmptySubArrayOf<["get", "set", "constructor"]>;
 }
 
+/** 命名空间声明接口 */
 interface NamespaceDeclaration extends Declaration {
+    /** 访问修饰符 */
     accessModifier?: NonEmptySubArrayOf<["declare", "export"]>;
+    /** 子元素列表 */
     children: Array<
         | ClassDeclaration
         | InterfaceDeclaration
@@ -348,19 +401,27 @@ interface NamespaceDeclaration extends Declaration {
         | TypeFunctionDeclaration
         | VariableDeclaration
     >;
+    /** 语句列表 */
     statements: Statement[];
 }
 
+/** 语句基础接口 */
 interface Statement extends BaseStatement {
+    /** 语句类型 */
     type: string;
 }
 
+/** 循环语句基础接口 */
 interface LoopStatement extends Statement {
+    /** break语句 */
     breaks: string[];
+    /** continue语句 */
     continues: string[];
 }
 
+/** 表达式持有者接口 */
 interface ExpressionHolder extends Statement {
+    /** 表达式 */
     expression: string;
 }
 
@@ -369,20 +430,17 @@ interface ExpressionHolder extends Statement {
  * processing `if`statement and `else` or `else if` nextly as a `if`chain \
  * easier processing logic
  */
+/** if语句接口 */
 interface IfStatement extends Statement {
+    /** 语句类型 */
     type: "IfStatement";
-    /**
-     * 1 if()
-     * 2 else if
-     * n else or else if
-     */
+    /** if链 */
     Chain: Array<{
+        /** 索引 */
         index: number;
-        /**
-         * only when it is else case,
-         * there haven't the condition property
-         */
+        /** 条件表达式 */
         condition?: string;
+        /** 语句体 */
         body: Statement[];
     }>;
 }
@@ -391,12 +449,19 @@ interface IfStatement extends Statement {
  * @see-also IfStatement
  * similar logic, but diff properties
  */
+/** switch语句接口 */
 interface switchStatement extends Statement {
+    /** 语句类型 */
     type: "switchStatement";
+    /** switch表达式 */
     switch: string;
+    /** case列表 */
     cases: Array<{
+        /** 索引 */
         index: number;
+        /** 匹配值 */
         match: string;
+        /** 语句体 */
         body: Statement[];
     }>;
 }
@@ -404,47 +469,62 @@ interface switchStatement extends Statement {
 /**
  * @notice `catches` is the `e` of `catch(e)`
  */
+/** try语句接口 */
 interface tryStatement extends Statement {
+    /** 语句类型 */
     type: "tryStatement";
+    /** try块 */
     try: Statement[];
-    /**
-     * catch(e)
-     * ------^
-     */
+    /** catch参数 */
     catches: string;
-    /**
-     * catch(e){...
-     * ----------^
-     */
+    /** catch块 */
     catch: Statement[];
+    /** finally块 */
     finally: Statement[];
 }
 
+/** debugger语句接口 */
 interface DebuggerStatement extends Statement {
+    /** 语句类型 */
     type: "DebuggerStatement";
 }
 
+/** delete语句接口 */
 interface DeleteStatement extends ExpressionHolder {
+    /** 语句类型 */
     type: "DeleteStatement";
 }
 
+/** with语句接口 */
 interface WithStatement extends ExpressionHolder {
+    /** 语句类型 */
     type: "WithStatement";
+    /** 语句体 */
     body: Statement[];
 }
 
+/** while语句接口 */
 interface WhileStatement extends LoopStatement {
+    /** 语句类型 */
     type: "whileStatement" | "doWhileStatement";
+    /** 语句体 */
     body: Array<Statement | "break" | "continue">;
+    /** 条件表达式 */
     condition: string;
 }
 
 interface ForStatement extends LoopStatement {
+    /** 循环类型标识 */
     type: "forStatement" | "forInStatement" | "forOfStatement";
+    /** 初始化表达式 */
     initializer?: string;
+    /** 循环条件表达式 */
     condition?: string;
+    /** 迭代表达式 */
     increment?: string;
+    /** 可迭代对象 */
     iterableObject?: string;
+    /** 循环体语句数组 */
     body: Array<Statement | "break" | "continue">;
 }
 
@@ -453,15 +533,23 @@ interface WithStatement extends Statement {
     string: string;
     body: Statement[];
 }
+/** 模块声明接口 */
 interface ModuleDeclaration extends Declaration {
+    /** 语句类型 */
     type: "ModuleDeclaration";
+    /** 模块名称 */
     name: string;
+    /** 模块体 */
     body: Statement[];
 }
 
+/** using语句接口 */
 interface UsingStatement extends Statement {
+    /** 语句类型 */
     type: "UsingStatement";
+    /** 声明列表 */
     declarations: VariableDeclaration[];
+    /** 语句体 */
     body: Statement[];
 }
 
@@ -469,30 +557,23 @@ interface UsingStatement extends Statement {
  * @deprecated
  * 搁置，勿用
  */
+/** 表达式接口 */
 interface Expression extends BaseStatement {}
 
 /**
  * debugger throw这些开发用的特殊语句
  */
+/** 开发用特殊语句接口 */
 interface devTokens extends BaseStatement {}
 
+/** 注释信息接口 */
 interface CommentsInfo extends Omit<BaseStatement, "comments"> {
-    /**
-     * normal `//` `/*`
-     * jsDoc `/**`
-     * Compiling `//@ts-xxx` `/// <...>`
-     */
+    /** 注释类型 */
     type: "normal" | "jsDoc" | "Compiling";
+    /** 注释内容 */
     content: string;
-    /**
-     * Usual seen where using jsDoc,
-     * linked with what the comment described to.
-     */
+    /** 装饰目标 */
     decorateTo?: string;
-    /**
-     * @ComingSoon
-     */
-    //  jsDocBody: ???
 }
 
 /*

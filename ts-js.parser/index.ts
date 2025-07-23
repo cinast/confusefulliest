@@ -66,7 +66,7 @@ type MakeAny<T, K extends keyof T, partially = false> = Omit<T, K> & partially e
  *    |             ]
  *    |     decorators [
  *    |             1  decorator(single) > name "some_rule"
- *    |             2  decorator(call expression) >
+ *    |             2  decorator(call string) >
  *    |                    name will
  *    |                    param x
  *    |                ]
@@ -80,9 +80,9 @@ type MakeAny<T, K extends keyof T, partially = false> = Omit<T, K> & partially e
  *      {key, v} =
  *      {}, 0, {a:"that",b:"is"}
  *
- *    cls.statements[1].functionBody[2] (variable expression)  >
+ *    cls.statements[1].functionBody[2] (variable string)  >
  *    |    modifier ["declare","const"] //有些修饰词的语义是处于灰色部分的，难分，不如放一起
- *    |    objects (expressions)[ // 适应解构模式
+ *    |    objects (strings)[ // 适应解构模式
  *    |             1 object >
  *    |                 name  obj
  *    |                 value  {}
@@ -133,12 +133,12 @@ type MakeAny<T, K extends keyof T, partially = false> = Omit<T, K> & partially e
  *    cls.statements[1].functionBody[4] (if statement)  >
  *    |    if cases [
  *    |             1 if >
- *    |                 condition  Expression
+ *    |                 condition  string
  *    |                 body  Statement[] >
  *    |                         1 returnStatement >
  *    |                                       Statement
  *    |             2 else-if >
- *    |                 condition Expression
+ *    |                 condition string
  *    |                 body  Statement[] >
  *    |                         1 yieldStatement >
  *    |                                       Statement
@@ -197,9 +197,19 @@ interface Declaration extends BaseStatement {
      * @see CommentsInfo
      */
     comments?: CommentsInfo[];
-    /** text of lines of decorators,
-     *  thats enough
-     */
+
+    // 访问控制修饰符 (单选)
+    accessControl?: "public" | "private" | "protected";
+
+    // 定义行为修饰符 (多选)
+    behaviors?: NonEmptySubArrayOf<["static", "abstract", "readonly"]>;
+
+    // 特殊标记
+    isAmbient?: boolean; // 替代declare修饰符
+    isOverride?: boolean; // 覆盖标记
+
+    /** text of lines of decorators */
+    decorators?: string[];
 }
 
 interface VariableDeclaration extends Declaration {
@@ -315,8 +325,8 @@ interface ClassDeclaration extends Declaration {
 
 interface PropertyDeclaration extends Declaration {
     decorators?: string[];
-    accessModifier?: NonEmptySubArrayOf<["declare", "override", "public", "private", "protected", "readonly", "static"]>;
-    // definingModifier?: NonEmptySubArrayOf<["accessor"]>;
+    // 定义行为修饰符 (多选)
+    definingModifier?: Array<"accessor" | "get" | "set">;
     // name
     type?: string;
     typeInferred: string;
@@ -345,6 +355,15 @@ interface Statement extends BaseStatement {
     type: string;
 }
 
+interface LoopStatement extends Statement {
+    breaks: string[];
+    continues: string[];
+}
+
+interface ExpressionHolder extends Statement {
+    expression: string;
+}
+
 /**
  * single statement lead by `if()` \
  * processing `if`statement and `else` or `else if` nextly as a `if`chain \
@@ -363,7 +382,7 @@ interface IfStatement extends Statement {
          * only when it is else case,
          * there haven't the condition property
          */
-        condition?: Expression;
+        condition?: string;
         body: Statement[];
     }>;
 }
@@ -374,10 +393,10 @@ interface IfStatement extends Statement {
  */
 interface switchStatement extends Statement {
     type: "switchStatement";
-    switch: Expression;
+    switch: string;
     cases: Array<{
         index: number;
-        match: Expression;
+        match: string;
         body: Statement[];
     }>;
 }
@@ -401,55 +420,39 @@ interface tryStatement extends Statement {
     finally: Statement[];
 }
 
-interface BreakStatement extends Statement {
-    type: "BreakStatement";
-    label?: string;
-}
-
-interface ContinueStatement extends Statement {
-    type: "ContinueStatement";
-    label?: string;
-}
-
 interface DebuggerStatement extends Statement {
     type: "DebuggerStatement";
 }
 
-interface DeleteExpression extends Expression {
-    type: "DeleteExpression";
-    expression: string; // 表达式改为字符串
+interface DeleteStatement extends ExpressionHolder {
+    type: "DeleteStatement";
 }
 
-interface ForStatement extends Statement {
-    type: "forStatement" | "forInStatement" | "forOfStatement";
-    looper: string[]; // for括号内的内容
+interface WithStatement extends ExpressionHolder {
+    type: "WithStatement";
     body: Statement[];
 }
 
-interface WhileStatement extends Statement {
+interface WhileStatement extends LoopStatement {
     type: "whileStatement" | "doWhileStatement";
-    body: Statement[];
-    condition: string; // 表达式改为字符串
-    isDoWhile?: boolean; // 仅do-while时为true
+    body: Array<Statement | "break" | "continue">;
+    condition: string;
+}
+
+interface ForStatement extends LoopStatement {
+    type: "forStatement" | "forInStatement" | "forOfStatement";
+    initializer?: string;
+    condition?: string;
+    increment?: string;
+    iterableObject?: string;
+    body: Array<Statement | "break" | "continue">;
 }
 
 interface WithStatement extends Statement {
     type: "WithStatement";
-    expression: Expression;
+    string: string;
     body: Statement[];
 }
-
-interface YieldExpression extends Expression {
-    type: "YieldExpression";
-    expression?: Expression;
-    delegate?: boolean;
-}
-
-interface AwaitExpression extends Expression {
-    type: "AwaitExpression";
-    expression: Expression;
-}
-
 interface ModuleDeclaration extends Declaration {
     type: "ModuleDeclaration";
     name: string;
@@ -492,6 +495,11 @@ interface CommentsInfo extends Omit<BaseStatement, "comments"> {
     //  jsDocBody: ???
 }
 
+/*
+ *  @WARNING
+ *  @AI-STOP-POINT
+ */
+//
 function getDebuggers() {
     return {
         logAST: (node: ts.Node, depth: number = 0) => {
@@ -831,7 +839,7 @@ function parseFile(filePath: string): SourceFile {
     //             CodeStructure.enums.push(enumInfo);
     //         }
     //         // 处理函数
-    //         else if (ts.isFunctionDeclaration(node) || ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
+    //         else if (ts.isFunctionDeclaration(node) || ts.isArrowFunction(node) || ts.isFunctionstring(node)) {
     //             const funcName = node.name?.text || `(anonymous function ${id})`;
     //             const modifiers = getModifiers(node);
     //             const funcInfo: FunctionInfo = {

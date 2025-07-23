@@ -417,41 +417,20 @@ interface DebuggerStatement extends Statement {
 
 interface DeleteExpression extends Expression {
     type: "DeleteExpression";
-    expression: Expression;
-}
-
-interface DoWhileStatement extends Statement {
-    type: "DoWhileStatement";
-    body: Statement[];
-    condition: Expression;
-}
-
-interface WhileStatement extends Statement {
-    type: "WhileStatement";
-    condition: Expression;
-    body: Statement[];
+    expression: string; // 表达式改为字符串
 }
 
 interface ForStatement extends Statement {
-    type: "ForStatement";
-    initializer?: Statement | Expression;
-    condition?: Expression;
-    incrementor?: Expression;
+    type: "forStatement" | "forInStatement" | "forOfStatement";
+    looper: string[]; // for括号内的内容
     body: Statement[];
 }
 
-interface ForInStatement extends Statement {
-    type: "ForInStatement";
-    initializer: Statement | Expression;
-    expression: Expression;
+interface WhileStatement extends Statement {
+    type: "whileStatement" | "doWhileStatement";
     body: Statement[];
-}
-
-interface ForOfStatement extends Statement {
-    type: "ForOfStatement";
-    initializer: Statement | Expression;
-    expression: Expression;
-    body: Statement[];
+    condition: string; // 表达式改为字符串
+    isDoWhile?: boolean; // 仅do-while时为true
 }
 
 interface WithStatement extends Statement {
@@ -483,8 +462,15 @@ interface UsingStatement extends Statement {
     body: Statement[];
 }
 
+/**
+ * @deprecated
+ * 搁置，勿用
+ */
 interface Expression extends BaseStatement {}
 
+/**
+ * debugger throw这些开发用的特殊语句
+ */
 interface devTokens extends BaseStatement {}
 
 interface CommentsInfo extends Omit<BaseStatement, "comments"> {

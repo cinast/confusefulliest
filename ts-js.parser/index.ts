@@ -150,13 +150,81 @@ type MakeAny<T, K extends keyof T, partially = false> = Omit<T, K> & partially e
  */
 export let idMap: Map<string, BaseStatement> = new Map();
 
+type NestedObject<K extends string | number | symbol, V> = {
+    [key in K]: V | NestedObject<K, V>;
+};
+type NestedList<K extends string | number | symbol, V> = Array<V | NestedList<K, V>>;
 /**
  * 魔改Typescript-ASt的抽象语法树
  * 但是考虑的不用像原版那么多
  * @see index.ts :14-126
  */
-export interface SourceFile {
-    statements: BaseStatement[];
+interface AnalyzedJSON {
+    AnalyzedAST: {
+        imports: {
+            id: string;
+            name: string;
+            alias?: string;
+        }[];
+        exports: {
+            id: string;
+            name: string;
+            alias?: string;
+        }[];
+        globalScope: BaseStatement[];
+
+        ScopeHierarchyMap: NestedList<string, string>;
+
+        // 所有解析的语法元素的平面索引
+        idMap: Record<
+            string,
+            {
+                /** 在自定义的ast中的路径 */
+                path: string;
+                name: string;
+                type?: string;
+                object: BaseStatement;
+                loc: { start: number; end: number };
+            }
+        >;
+    };
+
+    StandardAST: ts.SourceFile & {
+        __originalTypeInfo?: Record<string, ts.Type>;
+    };
+
+    compilerMetadata: {
+        /**
+         * 使用的tsconfig
+         */
+        tsconfig: ts.TsConfigSourceFile;
+        compilerVersion: string;
+    };
+
+    Metadata: {
+        parseInfo: {
+            parserVersion: string;
+            parserPath: string;
+            timeCost: number;
+            memoryUsage: number;
+            nodeCount: number;
+            identifierCount: number;
+        };
+        sourceInfo: {
+            targetPath: string;
+            fileSize: number;
+            loc: {
+                total: number;
+                code: number;
+                comment: number;
+                empty?: number; // 空行统计
+            };
+            hash: string;
+            encoding?: string; // 文件编码
+            lineEndings: "LF" | "CRLF"; // 换行符类型
+        };
+        output_logs: string;
+    };
 }
 
 /**
@@ -164,7 +232,9 @@ export interface SourceFile {
  */
 /** 基础语句类型必需的信息 */
 interface BaseStatement {
-    /** 唯一标识符 */
+    /**
+     * @see idMap
+     */
     id: string;
     /** 路径信息 */
     path: string[];
@@ -173,11 +243,14 @@ interface BaseStatement {
         start: number;
         end: number;
     };
+    statementType: string;
 }
 
 // 沿用 Declaration和 Statement 两大分类
 /** 声明类型的基础接口 */
 interface Declaration extends BaseStatement {
+    /** 声明类型标识 */
+    statementType: string;
     /** 声明名称 */
     name?: string;
     /** 注释信息 */
@@ -196,6 +269,8 @@ interface Declaration extends BaseStatement {
 
 /** 变量声明接口 */
 interface VariableDeclaration extends Declaration {
+    /** 声明类型标识 */
+    statementType: "VariableDeclaration";
     /** 访问修饰符 */
     accessModifier?: NonEmptySubArrayOf<["declare", "export"]>;
     /** 定义修饰符 */
@@ -213,6 +288,8 @@ interface VariableDeclaration extends Declaration {
 
 /** 函数声明接口 */
 interface FunctionDeclaration extends Declaration {
+    /** 声明类型标识 */
+    statementType: "FunctionDeclaration";
     /** 装饰器 */
     decorators?: string[];
     /** 访问修饰符 */
@@ -260,6 +337,8 @@ interface SingleParameterDeclaration extends Declaration {
 
 /** 类型函数声明接口 */
 interface TypeFunctionDeclaration extends Declaration {
+    /** 声明类型标识 */
+    statementType: "TypeFunctionDeclaration";
     /** 无装饰器 */
     decorators: never;
     /** 访问修饰符 */
@@ -295,6 +374,8 @@ interface SingleTypeParameterDeclaration extends Declaration {
  */
 /** 类型别名声明接口 */
 interface TypeAliasDeclaration extends Declaration {
+    /** 声明类型标识 */
+    statementType: "TypeAliasDeclaration";
     /** 访问修饰符 */
     accessModifier?: NonEmptySubArrayOf<["declare", "export"]>;
     /** 类型名称 */
@@ -305,6 +386,8 @@ interface TypeAliasDeclaration extends Declaration {
 
 /** 接口声明接口 */
 interface InterfaceDeclaration extends Declaration {
+    /** 声明类型标识 */
+    statementType: "InterfaceDeclaration";
     /** 访问修饰符 */
     accessModifier?: NonEmptySubArrayOf<["declare", "export"]>;
     /** 属性列表 */
@@ -313,6 +396,8 @@ interface InterfaceDeclaration extends Declaration {
 
 /** 枚举声明接口 */
 interface EnumDeclaration extends Declaration {
+    /** 声明类型标识 */
+    statementType: "EnumDeclaration";
     /** 访问修饰符 */
     accessModifier?: NonEmptySubArrayOf<["declare", "export"]>;
     /** 成员列表 */
@@ -324,6 +409,8 @@ interface EnumDeclaration extends Declaration {
  */
 /** 类声明接口 */
 interface ClassDeclaration extends Declaration {
+    /** 声明类型标识 */
+    statementType: "ClassDeclaration";
     /** 访问修饰符 */
     accessModifier?: NonEmptySubArrayOf<["declare", "export"]>;
     /** 定义修饰符 */
@@ -357,6 +444,8 @@ interface ClassDeclaration extends Declaration {
 
 /** 属性声明接口 */
 interface PropertyDeclaration extends Declaration {
+    /** 声明类型标识 */
+    statementType: "PropertyDeclaration";
     /** 装饰器 */
     decorators?: string[];
     /** 定义修饰符 */
@@ -371,6 +460,8 @@ interface PropertyDeclaration extends Declaration {
 
 /** 方法声明接口 */
 interface MethodDeclaration extends MakeAny<FunctionDeclaration, "accessModifier", true> {
+    /** 声明类型标识 */
+    statementType: "MethodDeclaration";
     /** 访问修饰符 */
     accessModifier?: NonEmptySubArrayOf<["declare", "override", "public", "private", "protected", "static"]>;
     /** 定义修饰符 */
@@ -379,6 +470,8 @@ interface MethodDeclaration extends MakeAny<FunctionDeclaration, "accessModifier
 
 /** 命名空间声明接口 */
 interface NamespaceDeclaration extends Declaration {
+    /** 声明类型标识 */
+    statementType: "NamespaceDeclaration";
     /** 访问修饰符 */
     accessModifier?: NonEmptySubArrayOf<["declare", "export"]>;
     /** 子元素列表 */
@@ -422,7 +515,7 @@ interface ExpressionHolder extends Statement {
 /** if语句接口 */
 interface IfStatement extends Statement {
     /** 语句类型 */
-    type: "IfStatement";
+    statementType: "IfStatement";
     /** if链 */
     Chain: Array<{
         /** 索引 */
@@ -441,7 +534,7 @@ interface IfStatement extends Statement {
 /** switch语句接口 */
 interface switchStatement extends Statement {
     /** 语句类型 */
-    type: "switchStatement";
+    statementType: "switchStatement";
     /** switch表达式 */
     switch: string;
     /** case列表 */
@@ -461,7 +554,7 @@ interface switchStatement extends Statement {
 /** try语句接口 */
 interface tryStatement extends Statement {
     /** 语句类型 */
-    type: "tryStatement";
+    statementType: "tryStatement";
     /** try块 */
     try: Statement[];
     /** catch参数 */
@@ -475,19 +568,19 @@ interface tryStatement extends Statement {
 /** debugger语句接口 */
 interface DebuggerStatement extends Statement {
     /** 语句类型 */
-    type: "DebuggerStatement";
+    statementType: "DebuggerStatement";
 }
 
 /** delete语句接口 */
 interface DeleteStatement extends ExpressionHolder {
     /** 语句类型 */
-    type: "DeleteStatement";
+    statementType: "DeleteStatement";
 }
 
 /** with语句接口 */
 interface WithStatement extends ExpressionHolder {
     /** 语句类型 */
-    type: "WithStatement";
+    statementType: "WithStatement";
     /** 语句体 */
     body: Statement[];
 }
@@ -495,7 +588,7 @@ interface WithStatement extends ExpressionHolder {
 /** while语句接口 */
 interface WhileStatement extends LoopStatement {
     /** 语句类型 */
-    type: "whileStatement" | "doWhileStatement";
+    statementType: "whileStatement" | "doWhileStatement";
     /** 语句体 */
     body: Array<Statement | "break" | "continue">;
     /** 条件表达式 */
@@ -504,7 +597,7 @@ interface WhileStatement extends LoopStatement {
 
 interface ForStatement extends LoopStatement {
     /** 循环类型标识 */
-    type: "forStatement" | "forInStatement" | "forOfStatement";
+    statementType: "forStatement" | "forInStatement" | "forOfStatement";
     /** 初始化表达式 */
     initializer?: string;
     /** 循环条件表达式 */
@@ -518,14 +611,14 @@ interface ForStatement extends LoopStatement {
 }
 
 interface WithStatement extends Statement {
-    type: "WithStatement";
+    statementType: "WithStatement";
     string: string;
     body: Statement[];
 }
 /** 模块声明接口 */
 interface ModuleDeclaration extends Declaration {
     /** 语句类型 */
-    type: "ModuleDeclaration";
+    statementType: "ModuleDeclaration";
     /** 模块名称 */
     name: string;
     /** 模块体 */
@@ -535,7 +628,7 @@ interface ModuleDeclaration extends Declaration {
 /** using语句接口 */
 interface UsingStatement extends Statement {
     /** 语句类型 */
-    type: "UsingStatement";
+    statementType: "UsingStatement";
     /** 声明列表 */
     declarations: VariableDeclaration[];
     /** 语句体 */
@@ -558,7 +651,7 @@ interface devTokens extends BaseStatement {}
 /** 注释信息接口 */
 interface CommentsInfo extends BaseStatement {
     /** 注释类型 */
-    type: "normal" | "jsDoc" | "Compiling";
+    type: "normal" | "jsDoc" | "Compile";
     /** 注释内容 */
     content: string;
     /** 装饰目标 */
@@ -598,7 +691,7 @@ function getDebuggers() {
             }
         },
 
-        dumpStructure: (structure: SourceFile) => {
+        dumpStructure: (structure: AnalyzedJSON) => {
             console.log(JSON.stringify(structure, null, 2));
         },
 

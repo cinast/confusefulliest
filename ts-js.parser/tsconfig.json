@@ -2,11 +2,14 @@
     "compilerOptions": {
         "target": "es2024",
         "module": "CommonJS",
+        "moduleResolution": "node",
         "strict": true,
         "esModuleInterop": true,
         "skipLibCheck": true,
         "forceConsistentCasingInFileNames": true,
-        "experimentalDecorators": true
+        "experimentalDecorators": true,
+        // "emitDecoratorMetadata": true
+        "lib": ["es2024"]
     },
     "include": ["**/*.ts"],
     "exclude": ["node_modules"],

@@ -214,3 +214,4 @@ doc/doc.txt
 cm.txt
 ts-parser/tmp/*
 ts-parser/index.js
+ts-js.parser/index.js

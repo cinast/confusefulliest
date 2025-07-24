@@ -202,6 +202,7 @@ var debugUtils = {
 var scriptParser = /** @class */ (function () {
     function scriptParser(tsconfigPath, options) {
         if (options === void 0) { options = {}; }
+        this.currentSourceFile = null;
         var _a = options.buildOutline, buildOutline = _a === void 0 ? false : _a, _b = options.skipTypeCheck, skipTypeCheck = _b === void 0 ? true : _b, _c = options.experimentalSyntax, experimentalSyntax = _c === void 0 ? "strict" : _c;
         var configFile = ts.readConfigFile(tsconfigPath, ts.sys.readFile);
         this.compilerOptions = ts.parseJsonConfigFileContent(configFile.config, ts.sys, path.dirname(tsconfigPath)).options;
@@ -212,25 +213,24 @@ var scriptParser = /** @class */ (function () {
     }
     scriptParser.prototype.parse = function (sourceFile) {
         var _this = this;
+        this.currentSourceFile = sourceFile;
         var idMap = {};
         var scopeHierarchy = [];
         var currentScope = [];
         var declarations = [];
         var visitor = function (node) {
-            // 处理Declaration节点
+            var sourceFile = _this.currentSourceFile;
             if (_this.isDeclaration(node)) {
                 var declaration = _this.processDeclarationNode(node);
                 declarations.push(declaration);
             }
-            // 实时构建映射
-            if (_this.shouldBuildOutline) {
-                _this.buildNodeMap(node, idMap, scopeHierarchy, currentScope);
-            }
             var id = _this.generateNodeId(node);
             var nodeInfo = _this.extractNodeInfo(node);
-            idMap[id] = __assign(__assign({}, nodeInfo), { loc: { start: node.getStart(), end: node.getEnd() } });
-            // 处理作用域变化
-            if (ts.isBlock(node) || ts.isFunctionDeclaration(node)) {
+            idMap[id] = __assign(__assign({}, nodeInfo), { loc: {
+                    start: node.getStart(sourceFile),
+                    end: node.getEnd(),
+                } });
+            if (ts.isBlock(node) || ts.isFunctionLike(node)) {
                 var prevScope = __spreadArray([], currentScope, true);
                 currentScope.push(id);
                 scopeHierarchy.push(__spreadArray([], currentScope, true));
@@ -240,26 +240,26 @@ var scriptParser = /** @class */ (function () {
             else {
                 ts.forEachChild(node, visitor);
             }
-            // 在解析时直接处理Declaration
-            if (_this.shouldBuildOutline && _this.isDeclaration(node)) {
-                _this.processDeclaration(node, idMap[id]);
-            }
         };
         ts.forEachChild(sourceFile, visitor);
+        var analyzedAST = {
+            imports: this.extractImports(sourceFile),
+            exports: this.extractExports(sourceFile),
+            globalScope: this.collectGlobalStatements(sourceFile),
+            ScopeHierarchyMap: scopeHierarchy,
+            idMap: idMap,
+        };
+        var compilerMetadata = {
+            fileName: sourceFile.fileName,
+            tsconfig: __assign(__assign({}, this.getTsConfig()), { compilerVersion: ts.version }),
+        };
+        var metadata = this.generateMetadata(sourceFile);
+        this.currentSourceFile = null;
         return {
-            AnalyzedAST: {
-                imports: this.extractImports(sourceFile),
-                exports: this.extractExports(sourceFile),
-                globalScope: this.collectGlobalStatements(sourceFile),
-                ScopeHierarchyMap: scopeHierarchy,
-                idMap: idMap,
-            },
+            AnalyzedAST: analyzedAST,
             StandardAST: sourceFile,
-            compilerMetadata: {
-                fileName: sourceFile.fileName,
-                tsconfig: __assign(__assign({}, this.getTsConfig()), { compilerVersion: ts.version }),
-            },
-            Metadata: this.generateMetadata(sourceFile),
+            compilerMetadata: compilerMetadata,
+            Metadata: metadata,
         };
     };
     scriptParser.prototype.isDeclaration = function (node) {
@@ -273,22 +273,26 @@ var scriptParser = /** @class */ (function () {
     };
     scriptParser.prototype.processDeclarationNode = function (node) {
         var _a, _b, _c, _d, _e, _f;
+        var sourceFile = this.currentSourceFile;
         var base = {
             id: this.generateNodeId(node),
             path: this.getNodePath(node),
-            location: { start: node.getStart(), end: node.getEnd() },
+            location: {
+                start: node.getStart(sourceFile),
+                end: node.getEnd(),
+            },
             statementType: ts.SyntaxKind[node.kind],
         };
         if (ts.isClassDeclaration(node)) {
             var modifiers = ts.getModifiers(node) || [];
             var hasAbstract = modifiers.some(function (m) { return m.kind === ts.SyntaxKind.AbstractKeyword; });
-            return __assign(__assign({}, base), { statementType: "ClassDeclaration", name: (_a = node.name) === null || _a === void 0 ? void 0 : _a.getText(), methods: [], properties: [], children: [], definingModifier: hasAbstract ? ["abstract"] : [], implements: [], prototype: { constructor: ((_b = node.name) === null || _b === void 0 ? void 0 : _b.getText()) || "" } });
+            return __assign(__assign({}, base), { statementType: "ClassDeclaration", name: ((_a = node.name) === null || _a === void 0 ? void 0 : _a.getText(sourceFile)) || "", methods: [], properties: [], children: [], definingModifier: hasAbstract ? ["abstract"] : [], implements: [], prototype: { constructor: ((_b = node.name) === null || _b === void 0 ? void 0 : _b.getText(sourceFile)) || "" } });
         }
         else if (ts.isFunctionDeclaration(node)) {
             var modifiers = ts.getModifiers(node) || [];
             var isAsync = modifiers.some(function (m) { return m.kind === ts.SyntaxKind.AsyncKeyword; });
             var isGenerator = node.asteriskToken !== undefined;
-            return __assign(__assign({}, base), { statementType: "FunctionDeclaration", name: (_c = node.name) === null || _c === void 0 ? void 0 : _c.getText(), parameters: [], returnType: (_d = node.type) === null || _d === void 0 ? void 0 : _d.getText(), returnTypeInferred: ((_e = node.type) === null || _e === void 0 ? void 0 : _e.getText()) || "any", functionBody: [], prototype: { constructor: ((_f = node.name) === null || _f === void 0 ? void 0 : _f.getText()) || "" }, typeModifier: isAsync && isGenerator ? "async-generic" : isAsync ? "async" : isGenerator ? "generic" : undefined });
+            return __assign(__assign({}, base), { statementType: "FunctionDeclaration", name: ((_c = node.name) === null || _c === void 0 ? void 0 : _c.getText(sourceFile)) || "", parameters: [], returnType: (_d = node.type) === null || _d === void 0 ? void 0 : _d.getText(sourceFile), returnTypeInferred: ((_e = node.type) === null || _e === void 0 ? void 0 : _e.getText(sourceFile)) || "any", functionBody: [], prototype: { constructor: ((_f = node.name) === null || _f === void 0 ? void 0 : _f.getText()) || "" }, typeModifier: isAsync && isGenerator ? "async-generic" : isAsync ? "async" : isGenerator ? "generic" : undefined });
         }
         // 其他Declaration类型的处理...
         return base;
@@ -305,20 +309,22 @@ var scriptParser = /** @class */ (function () {
     };
     scriptParser.prototype.processClassDeclaration = function (node, nodeInfo) {
         var _a;
+        var sourceFile = this.currentSourceFile;
         // 处理类声明的具体逻辑
         nodeInfo.statementType = "ClassDeclaration";
-        nodeInfo.name = (_a = node.name) === null || _a === void 0 ? void 0 : _a.getText();
+        nodeInfo.name = ((_a = node.name) === null || _a === void 0 ? void 0 : _a.getText(sourceFile)) || "";
         nodeInfo.methods = [];
         nodeInfo.properties = [];
         nodeInfo.children = [];
     };
     scriptParser.prototype.processFunctionDeclaration = function (node, nodeInfo) {
         var _a, _b;
+        var sourceFile = this.currentSourceFile;
         // 处理函数声明的具体逻辑
         nodeInfo.statementType = "FunctionDeclaration";
-        nodeInfo.name = (_a = node.name) === null || _a === void 0 ? void 0 : _a.getText();
+        nodeInfo.name = ((_a = node.name) === null || _a === void 0 ? void 0 : _a.getText(sourceFile)) || "";
         nodeInfo.parameters = [];
-        nodeInfo.returnType = (_b = node.type) === null || _b === void 0 ? void 0 : _b.getText();
+        nodeInfo.returnType = (_b = node.type) === null || _b === void 0 ? void 0 : _b.getText(sourceFile);
     };
     scriptParser.prototype.buildNodeMap = function (node, idMap, scopeHierarchy, currentScope) {
         var _this = this;
@@ -362,18 +368,48 @@ var scriptParser = /** @class */ (function () {
         return { idMap: idMap, scopeHierarchy: scopeHierarchy };
     };
     scriptParser.prototype.extractNodeInfo = function (node) {
+        var sourceFile = this.currentSourceFile;
+        var start = 0;
+        var end = 0;
+        try {
+            start = node.getStart(sourceFile);
+            end = node.getEnd();
+        }
+        catch (e) {
+            start = node.pos;
+            end = node.end;
+        }
         return {
             path: this.getNodePath(node),
             name: ts.isIdentifier(node) ? node.text : undefined,
             type: ts.SyntaxKind[node.kind],
-            object: this.createBaseStatement(node),
+            object: {
+                id: this.generateNodeId(node),
+                path: this.getNodePath(node),
+                location: { start: start, end: end },
+                statementType: ts.SyntaxKind[node.kind],
+            },
         };
     };
     scriptParser.prototype.createBaseStatement = function (node) {
+        var sourceFile = this.currentSourceFile;
+        var start = 0;
+        var end = 0;
+        try {
+            start = node.getStart(sourceFile);
+            end = node.getEnd();
+        }
+        catch (e) {
+            var error = e;
+            console.warn("Failed to get node position (".concat(ts.SyntaxKind[node.kind], "): ").concat(error.message));
+            console.warn("Falling back to node.pos/end for node: ".concat(node.getText(sourceFile).slice(0, 50), "..."));
+            start = node.pos;
+            end = node.end;
+        }
         return {
             id: this.generateNodeId(node),
             path: this.getNodePath(node),
-            location: { start: node.getStart(), end: node.getEnd() },
+            location: { start: start, end: end },
             statementType: ts.SyntaxKind[node.kind],
         };
     };
@@ -394,6 +430,8 @@ var scriptParser = /** @class */ (function () {
     };
     scriptParser.prototype.collectGlobalStatements = function (sourceFile) {
         var _this = this;
+        var prevSourceFile = this.currentSourceFile;
+        this.currentSourceFile = sourceFile;
         var statements = [];
         ts.transform(sourceFile, [
             function (context) {
@@ -408,6 +446,7 @@ var scriptParser = /** @class */ (function () {
                 return visit;
             },
         ]);
+        this.currentSourceFile = prevSourceFile;
         return statements;
     };
     scriptParser.prototype.processChildren = function (node, parentStatement) {

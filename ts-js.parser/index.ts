@@ -730,6 +730,7 @@ export class scriptParser {
     private readonly typeChecker: ts.TypeChecker;
     private readonly shouldBuildOutline: boolean;
     private readonly skipTypeCheck: boolean;
+    private currentSourceFile: ts.SourceFile | null = null;
 
     constructor(
         tsconfigPath: string,
@@ -749,32 +750,32 @@ export class scriptParser {
     }
 
     public parse(sourceFile: ts.SourceFile): AnalyzedJSON {
+        this.currentSourceFile = sourceFile;
         const idMap: Record<string, any> = {};
         const scopeHierarchy: NestedList<string, string> = [];
         let currentScope: string[] = [];
         const declarations: Declaration[] = [];
 
         const visitor = (node: ts.Node) => {
-            // 处理Declaration节点
+            const sourceFile = this.currentSourceFile!;
+
             if (this.isDeclaration(node)) {
                 const declaration = this.processDeclarationNode(node);
                 declarations.push(declaration);
             }
 
-            // 实时构建映射
-            if (this.shouldBuildOutline) {
-                this.buildNodeMap(node, idMap, scopeHierarchy, currentScope);
-            }
             const id = this.generateNodeId(node);
             const nodeInfo = this.extractNodeInfo(node);
 
             idMap[id] = {
                 ...nodeInfo,
-                loc: { start: node.getStart(), end: node.getEnd() },
+                loc: {
+                    start: node.getStart(sourceFile),
+                    end: node.getEnd(),
+                },
             };
 
-            // 处理作用域变化
-            if (ts.isBlock(node) || ts.isFunctionDeclaration(node)) {
+            if (ts.isBlock(node) || ts.isFunctionLike(node)) {
                 const prevScope = [...currentScope];
                 currentScope.push(id);
                 scopeHierarchy.push([...currentScope]);
@@ -783,33 +784,36 @@ export class scriptParser {
             } else {
                 ts.forEachChild(node, visitor);
             }
-
-            // 在解析时直接处理Declaration
-            if (this.shouldBuildOutline && this.isDeclaration(node)) {
-                this.processDeclaration(node, idMap[id]);
-            }
         };
 
         ts.forEachChild(sourceFile, visitor);
 
-        return {
-            AnalyzedAST: {
-                imports: this.extractImports(sourceFile),
-                exports: this.extractExports(sourceFile),
-                globalScope: this.collectGlobalStatements(sourceFile),
-                ScopeHierarchyMap: scopeHierarchy,
-                idMap,
-            },
-            StandardAST: sourceFile,
-            compilerMetadata: {
-                fileName: sourceFile.fileName,
-                tsconfig: {
-                    ...this.getTsConfig(),
-                    compilerVersion: ts.version,
-                },
-            },
-            Metadata: this.generateMetadata(sourceFile),
+        const analyzedAST = {
+            imports: this.extractImports(sourceFile),
+            exports: this.extractExports(sourceFile),
+            globalScope: this.collectGlobalStatements(sourceFile),
+            ScopeHierarchyMap: scopeHierarchy,
+            idMap,
         };
+
+        const compilerMetadata = {
+            fileName: sourceFile.fileName,
+            tsconfig: {
+                ...this.getTsConfig(),
+                compilerVersion: ts.version,
+            },
+        };
+
+        const metadata = this.generateMetadata(sourceFile);
+
+        this.currentSourceFile = null;
+
+        return {
+            AnalyzedAST: analyzedAST,
+            StandardAST: sourceFile,
+            compilerMetadata: compilerMetadata,
+            Metadata: metadata,
+        } as AnalyzedJSON;
     }
 
     private isDeclaration(node: ts.Node): boolean {
@@ -825,10 +829,14 @@ export class scriptParser {
     }
 
     private processDeclarationNode(node: ts.Node): Declaration {
+        const sourceFile = this.currentSourceFile!;
         const base: BaseStatement = {
             id: this.generateNodeId(node),
             path: this.getNodePath(node),
-            location: { start: node.getStart(), end: node.getEnd() },
+            location: {
+                start: node.getStart(sourceFile),
+                end: node.getEnd(),
+            },
             statementType: ts.SyntaxKind[node.kind],
         };
 
@@ -839,13 +847,13 @@ export class scriptParser {
             return {
                 ...base,
                 statementType: "ClassDeclaration",
-                name: node.name?.getText(),
+                name: node.name?.getText(sourceFile) || "",
                 methods: [],
                 properties: [],
                 children: [],
                 definingModifier: hasAbstract ? ["abstract"] : [],
                 implements: [],
-                prototype: { constructor: node.name?.getText() || "" },
+                prototype: { constructor: node.name?.getText(sourceFile) || "" },
             } as ClassDeclaration;
         } else if (ts.isFunctionDeclaration(node)) {
             const modifiers = ts.getModifiers(node) || [];
@@ -855,10 +863,10 @@ export class scriptParser {
             return {
                 ...base,
                 statementType: "FunctionDeclaration",
-                name: node.name?.getText(),
+                name: node.name?.getText(sourceFile) || "",
                 parameters: [],
-                returnType: node.type?.getText(),
-                returnTypeInferred: node.type?.getText() || "any",
+                returnType: node.type?.getText(sourceFile),
+                returnTypeInferred: node.type?.getText(sourceFile) || "any",
                 functionBody: [],
                 prototype: { constructor: node.name?.getText() || "" },
                 typeModifier: isAsync && isGenerator ? "async-generic" : isAsync ? "async" : isGenerator ? "generic" : undefined,
@@ -879,20 +887,22 @@ export class scriptParser {
     }
 
     private processClassDeclaration(node: ts.ClassDeclaration, nodeInfo: any) {
+        const sourceFile = this.currentSourceFile!;
         // 处理类声明的具体逻辑
         nodeInfo.statementType = "ClassDeclaration";
-        nodeInfo.name = node.name?.getText();
+        nodeInfo.name = node.name?.getText(sourceFile) || "";
         nodeInfo.methods = [];
         nodeInfo.properties = [];
         nodeInfo.children = [];
     }
 
     private processFunctionDeclaration(node: ts.FunctionDeclaration, nodeInfo: any) {
+        const sourceFile = this.currentSourceFile!;
         // 处理函数声明的具体逻辑
         nodeInfo.statementType = "FunctionDeclaration";
-        nodeInfo.name = node.name?.getText();
+        nodeInfo.name = node.name?.getText(sourceFile) || "";
         nodeInfo.parameters = [];
-        nodeInfo.returnType = node.type?.getText();
+        nodeInfo.returnType = node.type?.getText(sourceFile);
     }
 
     private buildNodeMap(
@@ -952,19 +962,51 @@ export class scriptParser {
     }
 
     private extractNodeInfo(node: ts.Node) {
+        const sourceFile = this.currentSourceFile!;
+        let start = 0;
+        let end = 0;
+
+        try {
+            start = node.getStart(sourceFile);
+            end = node.getEnd();
+        } catch (e) {
+            start = node.pos;
+            end = node.end;
+        }
+
         return {
             path: this.getNodePath(node),
             name: ts.isIdentifier(node) ? node.text : undefined,
             type: ts.SyntaxKind[node.kind],
-            object: this.createBaseStatement(node),
+            object: {
+                id: this.generateNodeId(node),
+                path: this.getNodePath(node),
+                location: { start, end },
+                statementType: ts.SyntaxKind[node.kind],
+            },
         };
     }
 
     private createBaseStatement(node: ts.Node): BaseStatement {
+        const sourceFile = this.currentSourceFile!;
+        let start = 0;
+        let end = 0;
+
+        try {
+            start = node.getStart(sourceFile);
+            end = node.getEnd();
+        } catch (e: unknown) {
+            const error = e as Error;
+            console.warn(`Failed to get node position (${ts.SyntaxKind[node.kind]}): ${error.message}`);
+            console.warn(`Falling back to node.pos/end for node: ${node.getText(sourceFile).slice(0, 50)}...`);
+            start = node.pos;
+            end = node.end;
+        }
+
         return {
             id: this.generateNodeId(node),
             path: this.getNodePath(node),
-            location: { start: node.getStart(), end: node.getEnd() },
+            location: { start, end },
             statementType: ts.SyntaxKind[node.kind],
         };
     }
@@ -989,6 +1031,9 @@ export class scriptParser {
     }
 
     private collectGlobalStatements(sourceFile: ts.SourceFile): BaseStatement[] {
+        const prevSourceFile = this.currentSourceFile;
+        this.currentSourceFile = sourceFile;
+
         const statements: BaseStatement[] = [];
 
         ts.transform(sourceFile, [
@@ -1005,6 +1050,7 @@ export class scriptParser {
             },
         ]);
 
+        this.currentSourceFile = prevSourceFile;
         return statements;
     }
 

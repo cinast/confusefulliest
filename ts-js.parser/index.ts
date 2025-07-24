@@ -844,6 +844,32 @@ export class scriptParser {
             const modifiers = ts.getModifiers(node) || [];
             const hasAbstract = modifiers.some((m) => m.kind === ts.SyntaxKind.AbstractKeyword);
 
+            if (!Object.prototype.hasOwnProperty.call(node, "name")) {
+                console.warn("节点缺少有效的name标识符");
+                console.warn("节点类型:", ts.SyntaxKind[node.kind]);
+                console.warn("节点内容:", node);
+                console.warn("FUCK NODE HAVEN'T NAME");
+                throw "FUCK";
+            }
+
+            if (!ts.isIdentifier(node.name!)) {
+                console.warn("节点name标识符类型不正确");
+                console.warn("节点类型:", ts.SyntaxKind[node.kind]);
+                console.warn("节点内容:", node);
+                console.warn("FUCK FAKE NODE NAME");
+                throw "FUCK";
+            }
+
+            if (!Object.prototype.hasOwnProperty.call(node.name, "getText")) {
+                console.warn("节点name标识符缺少有效的getText方法");
+                console.warn("节点类型:", ts.SyntaxKind[node.kind]);
+                console.warn("节点内容:", node);
+                console.log("\n");
+                console.warn(node.name!);
+                console.warn("FUCK FAKE GET NAME");
+                throw "FUCK";
+            }
+
             return {
                 ...base,
                 statementType: "ClassDeclaration",

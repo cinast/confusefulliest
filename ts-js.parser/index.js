@@ -212,6 +212,38 @@ var scriptParser = /** @class */ (function () {
         this.shouldBuildOutline = buildOutline;
         this.skipTypeCheck = skipTypeCheck;
     }
+    scriptParser.prototype.buildNestedStatements = function (sourceFile) {
+        var result = [];
+        var stack = [];
+        var visit = function (node) {
+            var id = (0, crypto_1.randomUUID)();
+            var current = [id];
+            // 检查当前节点是否应该开启新作用域
+            if (ts.isBlock(node) || ts.isFunctionLike(node) || ts.isClassLike(node)) {
+                stack.push({ id: id, children: [] });
+            }
+            // 如果栈中有父节点，添加到父节点的子集
+            if (stack.length > 0) {
+                var parent_1 = stack[stack.length - 1];
+                parent_1.children.push(current);
+            }
+            else {
+                result.push(current);
+            }
+            // 递归处理子节点
+            ts.forEachChild(node, visit);
+            // 结束作用域处理
+            if ((ts.isBlock(node) || ts.isFunctionLike(node) || ts.isClassLike(node)) && stack.length > 0) {
+                var completed = stack.pop();
+                // 将子节点添加到当前节点
+                if (completed.children.length > 0) {
+                    current.push(completed.children);
+                }
+            }
+        };
+        ts.forEachChild(sourceFile, visit);
+        return result;
+    };
     scriptParser.prototype.parse = function (sourceFile) {
         var _this = this;
         this.currentSourceFile = sourceFile;
@@ -247,7 +279,7 @@ var scriptParser = /** @class */ (function () {
             imports: this.extractImports(sourceFile),
             exports: this.extractExports(sourceFile),
             globalScope: this.collectGlobalStatements(sourceFile),
-            ScopeHierarchyMap: scopeHierarchy,
+            ScopTree: scopeHierarchy,
             idMap: idMap,
         };
         var compilerMetadata = {
@@ -256,9 +288,27 @@ var scriptParser = /** @class */ (function () {
         };
         var metadata = this.generateMetadata(sourceFile);
         this.currentSourceFile = null;
+        var originalSourceFile = delete __assign({}, sourceFile).statements;
+        // 转换StandardAST结构
+        var standardAST = __assign(__assign({}, originalSourceFile), { syntaxUnits: {}, 
+            ///@ts-ignore
+            statements: this.buildNestedStatements(sourceFile), __originalTypeInfo: {} });
+        // 构建syntaxUnits映射
+        var nodeIdMap = new Map();
+        ts.forEachChild(sourceFile, function (node) {
+            var id = (0, crypto_1.randomUUID)();
+            nodeIdMap.set(node, id);
+            standardAST.syntaxUnits[id] = {
+                node: __assign(__assign({}, node), { id: id }),
+                id: id,
+                path: _this.getNodePath(node),
+            };
+        });
+        // 补全AnalyzedAST结构
+        var fullAnalyzedAST = __assign(__assign({}, analyzedAST), { ScopeHierarchyMap: analyzedAST.ScopTree || [] });
         return {
-            AnalyzedAST: analyzedAST,
-            StandardAST: sourceFile,
+            AnalyzedAST: fullAnalyzedAST,
+            StandardAST: standardAST,
             compilerMetadata: compilerMetadata,
             Metadata: metadata,
         };
@@ -270,7 +320,9 @@ var scriptParser = /** @class */ (function () {
             ts.isInterfaceDeclaration(node) ||
             ts.isTypeAliasDeclaration(node) ||
             ts.isEnumDeclaration(node) ||
-            ts.isModuleDeclaration(node));
+            ts.isModuleDeclaration(node)
+        // ts.isDeclarationStatement(node)
+        );
     };
     scriptParser.prototype.processDeclarationNode = function (node) {
         var _a, _b, _c;
@@ -583,6 +635,8 @@ function cli() {
         process.exit(1);
     }
     var result = parser.parse(sourceFile);
+    console.clear();
+    console.log(result);
     fs.writeFileSync(outDir, JSON.stringify(result, null, 2));
     console.log("\u5206\u6790\u7ED3\u679C\u5DF2\u4FDD\u5B58\u5230 ".concat(outDir));
 }

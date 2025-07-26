@@ -164,19 +164,18 @@ export type NestedList<K extends string | number | symbol, V> = Array<V | Nested
  */
 export interface AnalyzedJSON {
     AnalyzedAST: {
-        imports: {
-            id: string;
-            name: string;
-            alias?: string;
-        }[];
-        exports: {
-            id: string;
-            name: string;
-            alias?: string;
-        }[];
-        globalScope: BaseStatement[];
-
-        ScopeHierarchyMap: NestedList<string, string>;
+        // imports: {
+        //     id: string;
+        //     name: string;
+        //     alias?: string;
+        // }[];
+        // exports: {
+        //     id: string;
+        //     name: string;
+        //     alias?: string;
+        // }[];
+        statements: BaseStatement[];
+        structureOutline: NestedList<string, string>;
 
         // 所有解析的语法元素的平面索引
         idMap: Record<
@@ -192,7 +191,11 @@ export interface AnalyzedJSON {
         >;
     };
 
-    StandardAST: ts.SourceFile & {
+    StandardAST: Pick<ts.SourceFile, "statements"> & {
+        /** 所有标准语法树的元素 */
+        syntaxUnits: Record<string, { node: ts.Node & { id: string }; id: string; path: string }>;
+        /** @see structureOutline */
+        statements: NestedList<string, string>;
         __originalTypeInfo?: Record<string, ts.Type>;
     };
 
@@ -789,10 +792,8 @@ export class scriptParser {
         ts.forEachChild(sourceFile, visitor);
 
         const analyzedAST = {
-            imports: this.extractImports(sourceFile),
-            exports: this.extractExports(sourceFile),
-            globalScope: this.collectGlobalStatements(sourceFile),
-            ScopeHierarchyMap: scopeHierarchy,
+            statements: this.collectGlobalStatements(sourceFile),
+            ScopTree: scopeHierarchy,
             idMap,
         };
 
@@ -808,12 +809,110 @@ export class scriptParser {
 
         this.currentSourceFile = null;
 
+        const originalSourceFile = delete { ...(sourceFile as any) }.statements as unknown as Pick<ts.SourceFile, "statements">;
+        // 转换StandardAST结构
+        const standardAST: AnalyzedJSON["StandardAST"] = {
+            ...originalSourceFile,
+            syntaxUnits: {},
+            /**
+             * ts 是谁说了算？你觉得他是ts.NodeArray<ts.Statement>就是ts.NodeArray<ts.Statement>？
+             * 他分明是NestedList<string, string>！
+             */
+            ///@ts-ignore
+            statements: this.buildNestedStatements(sourceFile),
+            __originalTypeInfo: {},
+        };
+
+        // 构建syntaxUnits映射
+        const nodeIdMap = new Map<ts.Node, string>();
+        ts.forEachChild(sourceFile, (node) => {
+            const id = randomUUID();
+            nodeIdMap.set(node, id);
+            standardAST.syntaxUnits[id] = {
+                node: {
+                    ...node,
+                    id,
+                },
+                id,
+                path: this.getNodePath(node),
+            };
+        });
+
+        // 补全AnalyzedAST结构
+        const fullAnalyzedAST = {
+            ...analyzedAST,
+            structureOutline: analyzedAST.ScopTree || [],
+        };
+
         return {
-            AnalyzedAST: analyzedAST,
-            StandardAST: sourceFile,
+            AnalyzedAST: fullAnalyzedAST,
+            StandardAST: standardAST,
             compilerMetadata: compilerMetadata,
             Metadata: metadata,
         } as AnalyzedJSON;
+    }
+
+    private buildNestedStatements(sourceFile: ts.SourceFile): NestedList<string, string> {
+        const result: NestedList<string, string> = [];
+        const stack: Array<{ id: string; children: NestedList<string, string> }> = [];
+
+        const visit = (node: ts.Node) => {
+            const id = randomUUID();
+            const current: NestedList<string, string> = [id];
+
+            // 检查当前节点是否应该开启新作用域
+            if (ts.isBlock(node) || ts.isFunctionLike(node) || ts.isClassLike(node)) {
+                stack.push({ id, children: [] });
+            }
+
+            // 如果栈中有父节点，添加到父节点的子集
+            if (stack.length > 0) {
+                const parent = stack[stack.length - 1];
+                parent.children.push(current);
+            } else {
+                result.push(current);
+            }
+
+            // 递归处理子节点
+            ts.forEachChild(node, visit);
+
+            // 结束作用域处理
+            if ((ts.isBlock(node) || ts.isFunctionLike(node) || ts.isClassLike(node)) && stack.length > 0) {
+                const completed = stack.pop()!;
+                // 将子节点添加到当前节点
+                if (completed.children.length > 0) {
+                    current.push(completed.children);
+                }
+            }
+        };
+        ts.forEachChild(sourceFile, visit);
+        return result;
+    }
+
+    private buildNodeMap(
+        node: ts.Node,
+        idMap: Record<string, any>,
+        scopeHierarchy: NestedList<string, string>,
+        currentScope: string[]
+    ) {
+        const id = randomUUID();
+        const nodeInfo = this.extractNodeInfo(node);
+
+        idMap[id] = {
+            ...nodeInfo,
+            loc: { start: node.getStart(), end: node.getEnd() },
+        };
+
+        // 处理作用域变化
+        if (ts.isBlock(node) || ts.isFunctionDeclaration(node)) {
+            const prevScope = [...currentScope];
+            currentScope.push(id);
+            scopeHierarchy.push([...currentScope]);
+            ts.forEachChild(node, (child) => this.buildNodeMap(child, idMap, scopeHierarchy, currentScope));
+            currentScope = prevScope;
+        } else {
+            ts.forEachChild(node, (child) => this.buildNodeMap(child, idMap, scopeHierarchy, currentScope));
+        }
     }
 
     private isDeclaration(node: ts.Node): boolean {
@@ -825,6 +924,7 @@ export class scriptParser {
             ts.isTypeAliasDeclaration(node) ||
             ts.isEnumDeclaration(node) ||
             ts.isModuleDeclaration(node)
+            // ts.isDeclarationStatement(node)
         );
     }
 
@@ -874,91 +974,6 @@ export class scriptParser {
         }
         // 其他Declaration类型的处理...
         return base as Declaration;
-    }
-
-    private processDeclaration(node: ts.Node, nodeInfo: any) {
-        // 实现具体的Declaration处理逻辑
-        if (ts.isClassDeclaration(node)) {
-            this.processClassDeclaration(node, nodeInfo);
-        } else if (ts.isFunctionDeclaration(node)) {
-            this.processFunctionDeclaration(node, nodeInfo);
-        }
-        // 其他Declaration类型的处理...
-    }
-
-    private processClassDeclaration(node: ts.ClassDeclaration, nodeInfo: any) {
-        const sourceFile = this.currentSourceFile!;
-        // 处理类声明的具体逻辑
-        nodeInfo.statementType = "ClassDeclaration";
-        nodeInfo.name = node.name?.getText(sourceFile) || "";
-        nodeInfo.methods = [];
-        nodeInfo.properties = [];
-        nodeInfo.children = [];
-    }
-
-    private processFunctionDeclaration(node: ts.FunctionDeclaration, nodeInfo: any) {
-        const sourceFile = this.currentSourceFile!;
-        // 处理函数声明的具体逻辑
-        nodeInfo.statementType = "FunctionDeclaration";
-        nodeInfo.name = node.name?.getText(sourceFile) || "";
-        nodeInfo.parameters = [];
-        nodeInfo.returnType = node.type?.getText(sourceFile);
-    }
-
-    private buildNodeMap(
-        node: ts.Node,
-        idMap: Record<string, any>,
-        scopeHierarchy: NestedList<string, string>,
-        currentScope: string[]
-    ) {
-        const id = randomUUID();
-        const nodeInfo = this.extractNodeInfo(node);
-
-        idMap[id] = {
-            ...nodeInfo,
-            loc: { start: node.getStart(), end: node.getEnd() },
-        };
-
-        // 处理作用域变化
-        if (ts.isBlock(node) || ts.isFunctionDeclaration(node)) {
-            const prevScope = [...currentScope];
-            currentScope.push(id);
-            scopeHierarchy.push([...currentScope]);
-            ts.forEachChild(node, (child) => this.buildNodeMap(child, idMap, scopeHierarchy, currentScope));
-            currentScope = prevScope;
-        } else {
-            ts.forEachChild(node, (child) => this.buildNodeMap(child, idMap, scopeHierarchy, currentScope));
-        }
-    }
-
-    private buildMaps(sourceFile: ts.SourceFile) {
-        const idMap: Record<string, any> = {};
-        const scopeHierarchy: NestedList<string, string> = [];
-        let currentScope: string[] = [];
-
-        const visitor = (node: ts.Node) => {
-            const id = randomUUID();
-            const nodeInfo = this.extractNodeInfo(node);
-
-            idMap[id] = {
-                ...nodeInfo,
-                loc: { start: node.getStart(), end: node.getEnd() },
-            };
-
-            // 处理作用域变化
-            if (ts.isBlock(node) || ts.isFunctionDeclaration(node)) {
-                const prevScope = [...currentScope];
-                currentScope.push(id);
-                scopeHierarchy.push([...currentScope]);
-                ts.forEachChild(node, visitor);
-                currentScope = prevScope;
-            } else {
-                ts.forEachChild(node, visitor);
-            }
-        };
-
-        ts.forEachChild(sourceFile, visitor);
-        return { idMap, scopeHierarchy };
     }
 
     private extractNodeInfo(node: ts.Node) {
@@ -1014,68 +1029,45 @@ export class scriptParser {
     private getNodeText(node: any, sourceFile: ts.SourceFile): string {
         if (!node) return "";
 
-        console.warn("节点类型:", ts.SyntaxKind[node.kind]);
-        console.warn("节点内容:", node);
-        console.warn("FUCK NODE");
-        // throw "FUCK";
-
-        debugger;
         // 优先使用getText方法
         if (ts.isFunctionDeclaration(node)) {
             return node.getText(sourceFile);
         }
-        debugger;
         // 处理各种AST节点类型
         if (ts.isIdentifier(node)) {
             return node.escapedText.toString();
         }
-        debugger;
-
         if (ts.isStringLiteral(node)) {
             return node.text;
         }
-        debugger;
-
         if (ts.isNumericLiteral(node)) {
             return node.text;
         }
-        debugger;
-
         if (ts.isTemplateLiteral(node)) {
             return node.getText(sourceFile);
         }
-        debugger;
         if (ts.isPropertyAccessExpression(node)) {
             return `${this.getNodeText(node.expression, sourceFile)}.${node.name.text}`;
         }
-        debugger;
         if (ts.isElementAccessExpression(node)) {
             return `${this.getNodeText(node.expression, sourceFile)}[${this.getNodeText(node.argumentExpression, sourceFile)}]`;
         }
-        debugger;
         if (ts.isCallExpression(node)) {
             return `${this.getNodeText(node.expression, sourceFile)}(${node.arguments
                 .map((arg) => this.getNodeText(arg, sourceFile))
                 .join(", ")})`;
         }
-        debugger;
-
         // 回退到escapedText
         if (node.escapedText) {
             return node.escapedText;
         }
-        debugger;
-
         // 处理其他特殊情况
         if (node.kind === ts.SyntaxKind.ThisKeyword) {
             return "this";
         }
-        debugger;
         if (node.kind === ts.SyntaxKind.SuperKeyword) {
             return "super";
         }
-        debugger;
-
         return "";
     }
 
@@ -1084,14 +1076,16 @@ export class scriptParser {
         return "";
     }
 
-    private extractImports(sourceFile: ts.SourceFile) {
-        // 实现提取imports的逻辑
-        return [];
-    }
-
-    private extractExports(sourceFile: ts.SourceFile) {
-        // 实现提取exports的逻辑
-        return [];
+    private isGlobalStatement(node: ts.Node): boolean {
+        return (
+            ts.isVariableStatement(node) ||
+            ts.isFunctionDeclaration(node) ||
+            ts.isClassDeclaration(node) ||
+            ts.isInterfaceDeclaration(node) ||
+            ts.isTypeAliasDeclaration(node) ||
+            ts.isEnumDeclaration(node) ||
+            ts.isModuleDeclaration(node)
+        );
     }
 
     private collectGlobalStatements(sourceFile: ts.SourceFile): BaseStatement[] {
@@ -1127,18 +1121,6 @@ export class scriptParser {
             parentStatement.children.push(childStatement);
             this.processChildren(child, childStatement);
         });
-    }
-
-    private isGlobalStatement(node: ts.Node): boolean {
-        return (
-            ts.isVariableStatement(node) ||
-            ts.isFunctionDeclaration(node) ||
-            ts.isClassDeclaration(node) ||
-            ts.isInterfaceDeclaration(node) ||
-            ts.isTypeAliasDeclaration(node) ||
-            ts.isEnumDeclaration(node) ||
-            ts.isModuleDeclaration(node)
-        );
     }
 
     private generateMetadata(sourceFile: ts.SourceFile) {
@@ -1202,7 +1184,10 @@ function cli() {
         process.exit(1);
     }
 
-    const result = parser.parse(sourceFile);
+    const result = measurePerformance("parsing took:", () => parser.parse(sourceFile));
+    console.clear();
+    console.log(result);
+
     fs.writeFileSync(outDir, JSON.stringify(result, null, 2));
     console.log(`分析结果已保存到 ${outDir}`);
 }

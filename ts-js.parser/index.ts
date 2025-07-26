@@ -764,7 +764,7 @@ export class scriptParser {
                 declarations.push(declaration);
             }
 
-            const id = this.generateNodeId(node);
+            const id = randomUUID();
             const nodeInfo = this.extractNodeInfo(node);
 
             idMap[id] = {
@@ -831,7 +831,7 @@ export class scriptParser {
     private processDeclarationNode(node: ts.Node): Declaration {
         const sourceFile = this.currentSourceFile!;
         const base: BaseStatement = {
-            id: this.generateNodeId(node),
+            id: randomUUID(),
             path: this.getNodePath(node),
             location: {
                 start: node.getStart(sourceFile),
@@ -844,42 +844,16 @@ export class scriptParser {
             const modifiers = ts.getModifiers(node) || [];
             const hasAbstract = modifiers.some((m) => m.kind === ts.SyntaxKind.AbstractKeyword);
 
-            if (!Object.prototype.hasOwnProperty.call(node, "name")) {
-                console.warn("节点缺少有效的name标识符");
-                console.warn("节点类型:", ts.SyntaxKind[node.kind]);
-                console.warn("节点内容:", node);
-                console.warn("FUCK NODE HAVEN'T NAME");
-                throw "FUCK";
-            }
-
-            if (!ts.isIdentifier(node.name!)) {
-                console.warn("节点name标识符类型不正确");
-                console.warn("节点类型:", ts.SyntaxKind[node.kind]);
-                console.warn("节点内容:", node);
-                console.warn("FUCK FAKE NODE NAME");
-                throw "FUCK";
-            }
-
-            if (!Object.prototype.hasOwnProperty.call(node.name, "getText")) {
-                console.warn("节点name标识符缺少有效的getText方法");
-                console.warn("节点类型:", ts.SyntaxKind[node.kind]);
-                console.warn("节点内容:", node);
-                console.log("\n");
-                console.warn(node.name!);
-                console.warn("FUCK FAKE GET NAME");
-                throw "FUCK";
-            }
-
             return {
                 ...base,
                 statementType: "ClassDeclaration",
-                name: node.name?.getText(sourceFile) || "",
+                name: this.getNodeText(node.name, sourceFile),
                 methods: [],
                 properties: [],
                 children: [],
                 definingModifier: hasAbstract ? ["abstract"] : [],
                 implements: [],
-                prototype: { constructor: node.name?.getText(sourceFile) || "" },
+                prototype: { constructor: base.id || "" },
             } as ClassDeclaration;
         } else if (ts.isFunctionDeclaration(node)) {
             const modifiers = ts.getModifiers(node) || [];
@@ -889,12 +863,12 @@ export class scriptParser {
             return {
                 ...base,
                 statementType: "FunctionDeclaration",
-                name: node.name?.getText(sourceFile) || "",
+                name: this.getNodeText(node.name, sourceFile),
                 parameters: [],
                 returnType: node.type?.getText(sourceFile),
                 returnTypeInferred: node.type?.getText(sourceFile) || "any",
                 functionBody: [],
-                prototype: { constructor: node.name?.getText() || "" },
+                prototype: { constructor: node.name?.escapedText.toString() || "" },
                 typeModifier: isAsync && isGenerator ? "async-generic" : isAsync ? "async" : isGenerator ? "generic" : undefined,
             } as FunctionDeclaration;
         }
@@ -937,7 +911,7 @@ export class scriptParser {
         scopeHierarchy: NestedList<string, string>,
         currentScope: string[]
     ) {
-        const id = this.generateNodeId(node);
+        const id = randomUUID();
         const nodeInfo = this.extractNodeInfo(node);
 
         idMap[id] = {
@@ -963,7 +937,7 @@ export class scriptParser {
         let currentScope: string[] = [];
 
         const visitor = (node: ts.Node) => {
-            const id = this.generateNodeId(node);
+            const id = randomUUID();
             const nodeInfo = this.extractNodeInfo(node);
 
             idMap[id] = {
@@ -1005,7 +979,7 @@ export class scriptParser {
             name: ts.isIdentifier(node) ? node.text : undefined,
             type: ts.SyntaxKind[node.kind],
             object: {
-                id: this.generateNodeId(node),
+                id: randomUUID(),
                 path: this.getNodePath(node),
                 location: { start, end },
                 statementType: ts.SyntaxKind[node.kind],
@@ -1030,15 +1004,79 @@ export class scriptParser {
         }
 
         return {
-            id: this.generateNodeId(node),
+            id: randomUUID(),
             path: this.getNodePath(node),
             location: { start, end },
             statementType: ts.SyntaxKind[node.kind],
         };
     }
 
-    private generateNodeId(node: ts.Node): string {
-        return `${node.pos}-${node.end}`;
+    private getNodeText(node: any, sourceFile: ts.SourceFile): string {
+        if (!node) return "";
+
+        console.warn("节点类型:", ts.SyntaxKind[node.kind]);
+        console.warn("节点内容:", node);
+        console.warn("FUCK NODE");
+        // throw "FUCK";
+
+        debugger;
+        // 优先使用getText方法
+        if (ts.isFunctionDeclaration(node)) {
+            return node.getText(sourceFile);
+        }
+        debugger;
+        // 处理各种AST节点类型
+        if (ts.isIdentifier(node)) {
+            return node.escapedText.toString();
+        }
+        debugger;
+
+        if (ts.isStringLiteral(node)) {
+            return node.text;
+        }
+        debugger;
+
+        if (ts.isNumericLiteral(node)) {
+            return node.text;
+        }
+        debugger;
+
+        if (ts.isTemplateLiteral(node)) {
+            return node.getText(sourceFile);
+        }
+        debugger;
+        if (ts.isPropertyAccessExpression(node)) {
+            return `${this.getNodeText(node.expression, sourceFile)}.${node.name.text}`;
+        }
+        debugger;
+        if (ts.isElementAccessExpression(node)) {
+            return `${this.getNodeText(node.expression, sourceFile)}[${this.getNodeText(node.argumentExpression, sourceFile)}]`;
+        }
+        debugger;
+        if (ts.isCallExpression(node)) {
+            return `${this.getNodeText(node.expression, sourceFile)}(${node.arguments
+                .map((arg) => this.getNodeText(arg, sourceFile))
+                .join(", ")})`;
+        }
+        debugger;
+
+        // 回退到escapedText
+        if (node.escapedText) {
+            return node.escapedText;
+        }
+        debugger;
+
+        // 处理其他特殊情况
+        if (node.kind === ts.SyntaxKind.ThisKeyword) {
+            return "this";
+        }
+        debugger;
+        if (node.kind === ts.SyntaxKind.SuperKeyword) {
+            return "super";
+        }
+        debugger;
+
+        return "";
     }
 
     private getNodePath(node: ts.Node): string {

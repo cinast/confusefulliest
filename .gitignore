@@ -212,8 +212,5 @@ __marimo__/
 output.drawio/*
 doc/doc.txt
 cm.txt
-ts-parser/tmp/*
-ts-parser/index.js
-ts-js.parser/index.js
-ts-js.parser/index.js
+ts-js.parser/tmp/**
 ts-js.parser/index.js

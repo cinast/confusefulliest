@@ -24,6 +24,7 @@ exports.scriptParser = exports.idMap = void 0;
 var ts = require("typescript");
 var fs = require("fs");
 var path = require("path");
+var crypto_1 = require("crypto");
 ("use strict");
 var parser_version = "0.0.0";
 // 支持的扩展名类型
@@ -224,7 +225,7 @@ var scriptParser = /** @class */ (function () {
                 var declaration = _this.processDeclarationNode(node);
                 declarations.push(declaration);
             }
-            var id = _this.generateNodeId(node);
+            var id = (0, crypto_1.randomUUID)();
             var nodeInfo = _this.extractNodeInfo(node);
             idMap[id] = __assign(__assign({}, nodeInfo), { loc: {
                     start: node.getStart(sourceFile),
@@ -272,10 +273,10 @@ var scriptParser = /** @class */ (function () {
             ts.isModuleDeclaration(node));
     };
     scriptParser.prototype.processDeclarationNode = function (node) {
-        var _a, _b, _c, _d, _e, _f;
+        var _a, _b, _c;
         var sourceFile = this.currentSourceFile;
         var base = {
-            id: this.generateNodeId(node),
+            id: (0, crypto_1.randomUUID)(),
             path: this.getNodePath(node),
             location: {
                 start: node.getStart(sourceFile),
@@ -286,13 +287,13 @@ var scriptParser = /** @class */ (function () {
         if (ts.isClassDeclaration(node)) {
             var modifiers = ts.getModifiers(node) || [];
             var hasAbstract = modifiers.some(function (m) { return m.kind === ts.SyntaxKind.AbstractKeyword; });
-            return __assign(__assign({}, base), { statementType: "ClassDeclaration", name: ((_a = node.name) === null || _a === void 0 ? void 0 : _a.getText(sourceFile)) || "", methods: [], properties: [], children: [], definingModifier: hasAbstract ? ["abstract"] : [], implements: [], prototype: { constructor: ((_b = node.name) === null || _b === void 0 ? void 0 : _b.getText(sourceFile)) || "" } });
+            return __assign(__assign({}, base), { statementType: "ClassDeclaration", name: this.getNodeText(node.name, sourceFile), methods: [], properties: [], children: [], definingModifier: hasAbstract ? ["abstract"] : [], implements: [], prototype: { constructor: base.id || "" } });
         }
         else if (ts.isFunctionDeclaration(node)) {
             var modifiers = ts.getModifiers(node) || [];
             var isAsync = modifiers.some(function (m) { return m.kind === ts.SyntaxKind.AsyncKeyword; });
             var isGenerator = node.asteriskToken !== undefined;
-            return __assign(__assign({}, base), { statementType: "FunctionDeclaration", name: ((_c = node.name) === null || _c === void 0 ? void 0 : _c.getText(sourceFile)) || "", parameters: [], returnType: (_d = node.type) === null || _d === void 0 ? void 0 : _d.getText(sourceFile), returnTypeInferred: ((_e = node.type) === null || _e === void 0 ? void 0 : _e.getText(sourceFile)) || "any", functionBody: [], prototype: { constructor: ((_f = node.name) === null || _f === void 0 ? void 0 : _f.getText()) || "" }, typeModifier: isAsync && isGenerator ? "async-generic" : isAsync ? "async" : isGenerator ? "generic" : undefined });
+            return __assign(__assign({}, base), { statementType: "FunctionDeclaration", name: this.getNodeText(node.name, sourceFile), parameters: [], returnType: (_a = node.type) === null || _a === void 0 ? void 0 : _a.getText(sourceFile), returnTypeInferred: ((_b = node.type) === null || _b === void 0 ? void 0 : _b.getText(sourceFile)) || "any", functionBody: [], prototype: { constructor: ((_c = node.name) === null || _c === void 0 ? void 0 : _c.escapedText.toString()) || "" }, typeModifier: isAsync && isGenerator ? "async-generic" : isAsync ? "async" : isGenerator ? "generic" : undefined });
         }
         // 其他Declaration类型的处理...
         return base;
@@ -328,7 +329,7 @@ var scriptParser = /** @class */ (function () {
     };
     scriptParser.prototype.buildNodeMap = function (node, idMap, scopeHierarchy, currentScope) {
         var _this = this;
-        var id = this.generateNodeId(node);
+        var id = (0, crypto_1.randomUUID)();
         var nodeInfo = this.extractNodeInfo(node);
         idMap[id] = __assign(__assign({}, nodeInfo), { loc: { start: node.getStart(), end: node.getEnd() } });
         // 处理作用域变化
@@ -349,7 +350,7 @@ var scriptParser = /** @class */ (function () {
         var scopeHierarchy = [];
         var currentScope = [];
         var visitor = function (node) {
-            var id = _this.generateNodeId(node);
+            var id = (0, crypto_1.randomUUID)();
             var nodeInfo = _this.extractNodeInfo(node);
             idMap[id] = __assign(__assign({}, nodeInfo), { loc: { start: node.getStart(), end: node.getEnd() } });
             // 处理作用域变化
@@ -384,7 +385,7 @@ var scriptParser = /** @class */ (function () {
             name: ts.isIdentifier(node) ? node.text : undefined,
             type: ts.SyntaxKind[node.kind],
             object: {
-                id: this.generateNodeId(node),
+                id: (0, crypto_1.randomUUID)(),
                 path: this.getNodePath(node),
                 location: { start: start, end: end },
                 statementType: ts.SyntaxKind[node.kind],
@@ -407,14 +408,72 @@ var scriptParser = /** @class */ (function () {
             end = node.end;
         }
         return {
-            id: this.generateNodeId(node),
+            id: (0, crypto_1.randomUUID)(),
             path: this.getNodePath(node),
             location: { start: start, end: end },
             statementType: ts.SyntaxKind[node.kind],
         };
     };
-    scriptParser.prototype.generateNodeId = function (node) {
-        return "".concat(node.pos, "-").concat(node.end);
+    scriptParser.prototype.getNodeText = function (node, sourceFile) {
+        var _this = this;
+        if (!node)
+            return "";
+        console.warn("节点类型:", ts.SyntaxKind[node.kind]);
+        console.warn("节点内容:", node);
+        console.warn("FUCK NODE");
+        // throw "FUCK";
+        debugger;
+        // 优先使用getText方法
+        if (ts.isFunctionDeclaration(node)) {
+            return node.getText(sourceFile);
+        }
+        debugger;
+        // 处理各种AST节点类型
+        if (ts.isIdentifier(node)) {
+            return node.escapedText.toString();
+        }
+        debugger;
+        if (ts.isStringLiteral(node)) {
+            return node.text;
+        }
+        debugger;
+        if (ts.isNumericLiteral(node)) {
+            return node.text;
+        }
+        debugger;
+        if (ts.isTemplateLiteral(node)) {
+            return node.getText(sourceFile);
+        }
+        debugger;
+        if (ts.isPropertyAccessExpression(node)) {
+            return "".concat(this.getNodeText(node.expression, sourceFile), ".").concat(node.name.text);
+        }
+        debugger;
+        if (ts.isElementAccessExpression(node)) {
+            return "".concat(this.getNodeText(node.expression, sourceFile), "[").concat(this.getNodeText(node.argumentExpression, sourceFile), "]");
+        }
+        debugger;
+        if (ts.isCallExpression(node)) {
+            return "".concat(this.getNodeText(node.expression, sourceFile), "(").concat(node.arguments
+                .map(function (arg) { return _this.getNodeText(arg, sourceFile); })
+                .join(", "), ")");
+        }
+        debugger;
+        // 回退到escapedText
+        if (node.escapedText) {
+            return node.escapedText;
+        }
+        debugger;
+        // 处理其他特殊情况
+        if (node.kind === ts.SyntaxKind.ThisKeyword) {
+            return "this";
+        }
+        debugger;
+        if (node.kind === ts.SyntaxKind.SuperKeyword) {
+            return "super";
+        }
+        debugger;
+        return "";
     };
     scriptParser.prototype.getNodePath = function (node) {
         // 实现获取节点路径的逻辑
